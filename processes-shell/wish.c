@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -54,8 +55,9 @@ int getNumArgs(char *str, char *sep, char **redirectFileNamep) {
   int i;
   for (i = 0; i < strlen(str); i++) {
     if (str[i] == '>') {
-      i += 1;
       hasRedirect = true;
+      str[i] = ' '; // so that when we parse the args later, we only parse up to where the '>' was
+      i += 1;
       break;
     }
 
@@ -70,6 +72,7 @@ int getNumArgs(char *str, char *sep, char **redirectFileNamep) {
     int numRedirectArgs = 0;
     int redirectFileNameStart = -1;
     int redirectFileNameEnd = -1;
+    prevWasSep = true; // this is so that redirection doesn't require whitespace
     for (; i < strlen(str); i++) {
       // set currIsSep
       bool currIsSep = isCharInStr(str[i], sep);
@@ -81,6 +84,7 @@ int getNumArgs(char *str, char *sep, char **redirectFileNamep) {
         } else if (numRedirectArgs > 1) {
           printVerbose("Too many args to redirect\n");
           error();
+          return -1;
         }
       } else if (!prevWasSep && currIsSep) {
         redirectFileNameEnd = i;
@@ -150,9 +154,15 @@ void reallocPathArr(char ***pathsp, int *numPathsp, int newNumPaths) {
 void parseLine(char *lineBuffer, char ***pathsp, int *numPathsp) {
   do {
     char *parallelCommand = strsep(&lineBuffer, "&");
-    char *redirectFileName;
+    char *redirectFileName = NULL;
     int numArgs = getNumArgs(parallelCommand, WHITESPACE, &redirectFileName);
+    printVerbose("redirect file name: %s\n", redirectFileName);
     if (numArgs == -1) {
+      continue;
+    } else if (numArgs == 0) {
+      if (redirectFileName != NULL) {
+        error();
+      }
       continue;
     }
     char **args = parseArgs(&parallelCommand, numArgs);
@@ -176,50 +186,54 @@ void parseLine(char *lineBuffer, char ***pathsp, int *numPathsp) {
       exit(0);
     } else if (strcmp(args[0], "path") == 0) {
       reallocPathArr(pathsp, numPathsp, numArgs - 1);
+      //printVerbose("# paths: %i, paths: ", *numPathsp);
       for (int i = 1; i < numArgs; i++) {
         (*pathsp)[i-1] = strdup(args[i]);
-        printVerbose("%s, ", (*pathsp)[i-1]);
       }
       printVerbose("\n");
     } else {
       if (*numPathsp == 0) {
+        printVerbose("No path - cannot find non-builtin command\n");
         error();
         continue;
       }
+      bool wasFileError = false;
       for (int i = 0; i < *numPathsp; i++) {
-        char *fname = (char *) malloc(strlen(*pathsp[i]) + 1 + strlen(args[0]) + 1);
+        char *fname = (char *) malloc(strlen((*pathsp)[i]) + 1 + strlen(args[0]) + 1);
         if (fname == NULL) {
           printVerbose("malloc failed for fname\n");
           error();
         }
-        strcpy(fname, *pathsp[i]);
+        strcpy(fname, (*pathsp)[i]);
         strcat(fname, "/");
         strcat(fname, args[0]);
-        printVerbose("%s\n", fname);
-        if(access(fname, F_OK) == 0) {
+        printVerbose("binary file name: %s\n", fname);
+        if (access(fname, F_OK) == 0) {
           // file exists
-          if (redirectFileName != NULL) {
-            int outFd = open(redirectFileName, O_WRONLY|O_CREAT);
-            if (outFd == -1) {
-              printVerbose("Couldn't open output file\n");
-              exitError();
-            }
-            dup2(outFd, 1);
-            dup2(outFd, 2);
-            close(outFd);
-          }
           int forkResult = fork();
           if (forkResult < 0) {
             printVerbose("fork failed\n");
             error();
           } else if (forkResult == 0) {
+            if (redirectFileName != NULL) {
+              int outFd = open(redirectFileName, O_WRONLY|O_APPEND|O_CREAT, 0644);
+              if (outFd == -1) {
+                printVerbose("Couldn't open/create output file %s\n", redirectFileName);
+                printVerbose("%s\n", strerror(errno));
+                wasFileError = true;
+                error();
+                break;
+              }
+              dup2(outFd, 1);
+              dup2(outFd, 2);
+              close(outFd);
+            }
             if (execv(fname, args) == -1) {
               printVerbose("execv failed\n");
               error();
               exit(1);
             }
           } else {
-            // TODO: this hangs for some reason
             int waitResult = wait(NULL);
             if (waitResult == -1) {
               printVerbose("wait failed\n");
@@ -231,6 +245,9 @@ void parseLine(char *lineBuffer, char ***pathsp, int *numPathsp) {
           error();
         }
         free(fname);
+      }
+      if (wasFileError) {
+        break;
       }
     }
     free(args);
@@ -251,7 +268,8 @@ int main(int argc, char **argv) {
   } else if (argc == 2) {
     inStream = fopen(argv[1], "r");
     if (inStream == NULL) {
-      error();
+      printVerbose ("Invalid input file\n");
+      exitError();
     }
     isInteractiveMode = false;
   } else {
