@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -12,6 +13,10 @@
 char error_message[30] = "An error has occurred\n";
 char *initialPath = "/bin";
 bool isVerbose = false;
+
+// global state
+char **globalPaths = NULL;
+int globalNumPaths = 0;
 
 void printVerbose(char *fmt, ...) {
   if (isVerbose) {
@@ -27,7 +32,7 @@ void error() {
 }
 
 void exitError() {
-  fwrite(error_message, sizeof(char), strlen(error_message), stderr);
+  error();
   exit(1);
 }
 
@@ -74,7 +79,6 @@ int getNumArgs(char *str, char **redirectFileNamep) {
     int redirectFileNameEnd = -1;
     prevWasSep = true; // this is so that redirection doesn't require whitespace
     for (; i < strlen(str); i++) {
-      // set currIsSep
       bool currIsSep = isCharInStr(str[i], WHITESPACE);
       // procs when we are at the start of a token
       if (prevWasSep && !currIsSep) {
@@ -132,42 +136,43 @@ bool assertArgs(char *progname, int expected, int actual) {
   return true;
 };
 
-void freePathArr(char ***pathsp, int numPathsp) {
-  for (int i = 0; i < numPathsp; i++) {
-    free((*pathsp)[i]);
+void freePathArr() {
+  for (int i = 0; i < globalNumPaths; i++) {
+    free(globalPaths[i]);
   }
-  free(*pathsp);
+  free(globalPaths);
 }
 
-void reallocPathArr(char ***pathsp, int *numPathsp, int newNumPaths) {
-  if (*pathsp != NULL) {
-    freePathArr(pathsp, *numPathsp);
+void reallocPathArr(int newNumPaths) {
+  if (globalPaths != NULL) {
+    freePathArr();
   }
-  *pathsp = (char **) malloc(sizeof(char **) * newNumPaths);
-  if (*pathsp == NULL) {
+  globalPaths = (char **) malloc(sizeof(char **) * newNumPaths);
+  if (globalPaths == NULL) {
     printVerbose("malloc failed in reallocPathArr\n");
     error();
   }
-  *numPathsp = newNumPaths;
+  globalNumPaths = newNumPaths;
 }
 
-void parseParallelCommand(char *parallelCommand, char ***pathsp, int *numPathsp) {
+void *parseParallelCommand(void *parallelCommandVoid) {
+  char *parallelCommand = (char *) parallelCommandVoid;
   char *redirectFileName = NULL;
   int numArgs = getNumArgs(parallelCommand, &redirectFileName);
   printVerbose("redirect file name: %s\n", redirectFileName);
   if (numArgs == -1) {
-    return;
+    return NULL;
   } else if (numArgs == 0) {
     if (redirectFileName != NULL) {
       printVerbose("must supply a command to redirect\n");
       error();
     }
-    return;
+    return NULL;
   }
   char **args = parseArgs(&parallelCommand, numArgs);
   if (strcmp(args[0], "cd") == 0) {
     if (!assertArgs("cd", 2, numArgs)) {
-      return;
+      return NULL;
     }
     if (chdir(args[1]) != 0) {
       printVerbose("directory change error\n");
@@ -179,31 +184,30 @@ void parseParallelCommand(char *parallelCommand, char ***pathsp, int *numPathsp)
     free(cwd);
   } else if (strcmp(args[0], "exit") == 0) {
     if (!assertArgs("exit", 1, numArgs)) {
-      return;
+      return NULL;
     }
     printVerbose("exit\n");
     exit(0);
   } else if (strcmp(args[0], "path") == 0) {
-    reallocPathArr(pathsp, numPathsp, numArgs - 1);
-    //printVerbose("# paths: %i, paths: ", *numPathsp);
+    reallocPathArr(numArgs - 1);
+    //printVerbose("# paths: %i, paths: ", globalNumPaths);
     for (int i = 1; i < numArgs; i++) {
-      (*pathsp)[i-1] = strdup(args[i]);
+      globalPaths[i-1] = strdup(args[i]);
     }
     printVerbose("\n");
   } else {
-    if (*numPathsp == 0) {
+    if (globalNumPaths == 0) {
       printVerbose("No path - cannot find non-builtin command\n");
       error();
-      return;
+      return NULL;
     }
-    bool wasFileError = false;
-    for (int i = 0; i < *numPathsp; i++) {
-      char *fname = (char *) malloc(strlen((*pathsp)[i]) + 1 + strlen(args[0]) + 1);
+    for (int i = 0; i < globalNumPaths; i++) {
+      char *fname = (char *) malloc(strlen(globalPaths[i]) + 1 + strlen(args[0]) + 1);
       if (fname == NULL) {
         printVerbose("malloc failed for fname\n");
         error();
       }
-      strcpy(fname, (*pathsp)[i]);
+      strcpy(fname, globalPaths[i]);
       strcat(fname, "/");
       strcat(fname, args[0]);
       printVerbose("binary file name: %s\n", fname);
@@ -215,11 +219,10 @@ void parseParallelCommand(char *parallelCommand, char ***pathsp, int *numPathsp)
           error();
         } else if (forkResult == 0) {
           if (redirectFileName != NULL) {
-            int outFd = open(redirectFileName, O_WRONLY|O_APPEND|O_CREAT, 0644);
+            int outFd = open(redirectFileName, O_WRONLY|O_CREAT, 0644);
             if (outFd == -1) {
               printVerbose("Couldn't open/create output file %s\n", redirectFileName);
               printVerbose("%s\n", strerror(errno));
-              wasFileError = true;
               error();
               break;
             }
@@ -240,7 +243,7 @@ void parseParallelCommand(char *parallelCommand, char ***pathsp, int *numPathsp)
           }
         }
         break; // found the command, so we can stop looking
-      } else if (i == *numPathsp - 1) {
+      } else if (i == globalNumPaths - 1) {
         printVerbose("Binary not found\n");
         error();
       }
@@ -248,119 +251,46 @@ void parseParallelCommand(char *parallelCommand, char ***pathsp, int *numPathsp)
     }
   }
   free(args);
+  return NULL;
 }
 
-void parseLine(char *lineBuffer, char ***pathsp, int *numPathsp) {
-  do {
+void parseLine(char *lineBuffer) {
+  // figure out how many parallel commands there are
+  int numCommands = 1;
+  int i = 0;
+  while (lineBuffer[i] != '\0') {
+    if (lineBuffer[i] == '&') {
+      numCommands += 1;
+    }
+    i += 1;
+  }
+
+  // make the threads
+  pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * numCommands);
+  for (int i = 0; i < numCommands; i++) {
     char *parallelCommand = strsep(&lineBuffer, "&");
-    parseParallelCommand(parallelCommand, pathsp, numPathsp);
-    /*char *redirectFileName = NULL;
-    int numArgs = getNumArgs(parallelCommand, &redirectFileName);
-    printVerbose("redirect file name: %s\n", redirectFileName);
-    if (numArgs == -1) {
-      continue;
-    } else if (numArgs == 0) {
-      if (redirectFileName != NULL) {
-        error();
-      }
-      continue;
+    int rc = pthread_create(&threads[i], NULL, &parseParallelCommand, (void *) parallelCommand);
+    if (rc) {
+      printVerbose("Error creating thread %i, command: %s\n", i, parallelCommand);
+      exitError();
     }
-    char **args = parseArgs(&parallelCommand, numArgs);
-    if (strcmp(args[0], "cd") == 0) {
-      if (!assertArgs("cd", 2, numArgs)) {
-        continue;
-      }
-      if (chdir(args[1]) != 0) {
-        printVerbose("directory change error\n");
-        error();
-      }
-      char *cwd = NULL;
-      cwd = getcwd(cwd, 0);
-      printVerbose("%s\n", cwd);
-      free(cwd);
-    } else if (strcmp(args[0], "exit") == 0) {
-      if (!assertArgs("exit", 1, numArgs)) {
-        continue;
-      }
-      printVerbose("exit\n");
-      exit(0);
-    } else if (strcmp(args[0], "path") == 0) {
-      reallocPathArr(pathsp, numPathsp, numArgs - 1);
-      //printVerbose("# paths: %i, paths: ", *numPathsp);
-      for (int i = 1; i < numArgs; i++) {
-        (*pathsp)[i-1] = strdup(args[i]);
-      }
-      printVerbose("\n");
-    } else {
-      if (*numPathsp == 0) {
-        printVerbose("No path - cannot find non-builtin command\n");
-        error();
-        continue;
-      }
-      bool wasFileError = false;
-      for (int i = 0; i < *numPathsp; i++) {
-        char *fname = (char *) malloc(strlen((*pathsp)[i]) + 1 + strlen(args[0]) + 1);
-        if (fname == NULL) {
-          printVerbose("malloc failed for fname\n");
-          error();
-        }
-        strcpy(fname, (*pathsp)[i]);
-        strcat(fname, "/");
-        strcat(fname, args[0]);
-        printVerbose("binary file name: %s\n", fname);
-        if (access(fname, F_OK) == 0) {
-          // file exists
-          int forkResult = fork();
-          if (forkResult < 0) {
-            printVerbose("fork failed\n");
-            error();
-          } else if (forkResult == 0) {
-            if (redirectFileName != NULL) {
-              int outFd = open(redirectFileName, O_WRONLY|O_APPEND|O_CREAT, 0644);
-              if (outFd == -1) {
-                printVerbose("Couldn't open/create output file %s\n", redirectFileName);
-                printVerbose("%s\n", strerror(errno));
-                wasFileError = true;
-                error();
-                break;
-              }
-              dup2(outFd, 1);
-              dup2(outFd, 2);
-              close(outFd);
-            }
-            if (execv(fname, args) == -1) {
-              printVerbose("execv failed\n");
-              error();
-              exit(1);
-            }
-          } else {
-            int waitResult = wait(NULL);
-            if (waitResult == -1) {
-              printVerbose("wait failed\n");
-              error();
-            }
-          }
-          break; // found the command, so we can stop looking
-        } else if (i == *numPathsp - 1) {
-          printVerbose("Binary not found\n");
-          error();
-        }
-        free(fname);
-      }
-      if (wasFileError) {
-        break;
-      }
+  }
+
+  // join the threads
+  for (int i = 0; i < numCommands; i++) {
+    int thread_rc = pthread_join(threads[i], NULL);
+    if (thread_rc) {
+      printVerbose("Error in thread %i\n");
+      error();
     }
-    free(args);*/
-  } while (lineBuffer != NULL);
+  }
+  free(threads);
 }
 
 
 int main(int argc, char **argv) {
-  int numPaths = 0;
-  char **paths = NULL;
-  reallocPathArr(&paths, &numPaths, 1);
-  paths[0] = strdup(initialPath);
+  reallocPathArr(1);
+  globalPaths[0] = strdup(initialPath);
 
   FILE *inStream = stdin;
   bool isInteractiveMode = false;
@@ -384,7 +314,7 @@ int main(int argc, char **argv) {
     printf("wish> ");
   }
   while (getline(&lineBuffer, &lineCapacity, inStream) != -1) {
-    parseLine(lineBuffer, &paths, &numPaths);
+    parseLine(lineBuffer);
     if (isInteractiveMode) {
       printf("wish> ");
     }
