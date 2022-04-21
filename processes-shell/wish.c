@@ -48,7 +48,7 @@ bool isCharInStr(char c, char *sep) {
   return false;
 }
 
-int getNumArgs(char *str, char *sep, char **redirectFileNamep) {
+int getNumArgs(char *str, char **redirectFileNamep) {
   int numTokens = 0;
   char prevWasSep = true;
   char hasRedirect = false;
@@ -61,7 +61,7 @@ int getNumArgs(char *str, char *sep, char **redirectFileNamep) {
       break;
     }
 
-    bool currIsSep = isCharInStr(str[i], sep);
+    bool currIsSep = isCharInStr(str[i], WHITESPACE);
     // procs when we are at the start of a token
     if (prevWasSep && !currIsSep) {
       numTokens += 1;
@@ -75,7 +75,7 @@ int getNumArgs(char *str, char *sep, char **redirectFileNamep) {
     prevWasSep = true; // this is so that redirection doesn't require whitespace
     for (; i < strlen(str); i++) {
       // set currIsSep
-      bool currIsSep = isCharInStr(str[i], sep);
+      bool currIsSep = isCharInStr(str[i], WHITESPACE);
       // procs when we are at the start of a token
       if (prevWasSep && !currIsSep) {
         numRedirectArgs += 1;
@@ -151,11 +151,15 @@ void reallocPathArr(char ***pathsp, int *numPathsp, int newNumPaths) {
   *numPathsp = newNumPaths;
 }
 
+void parseParallelCommand(char *parallelCommand) {
+  
+}
+
 void parseLine(char *lineBuffer, char ***pathsp, int *numPathsp) {
   do {
     char *parallelCommand = strsep(&lineBuffer, "&");
     char *redirectFileName = NULL;
-    int numArgs = getNumArgs(parallelCommand, WHITESPACE, &redirectFileName);
+    int numArgs = getNumArgs(parallelCommand, &redirectFileName);
     printVerbose("redirect file name: %s\n", redirectFileName);
     if (numArgs == -1) {
       continue;
@@ -240,6 +244,7 @@ void parseLine(char *lineBuffer, char ***pathsp, int *numPathsp) {
               error();
             }
           }
+          break; // found the command, so we can stop looking
         } else if (i == *numPathsp - 1) {
           printVerbose("Binary not found\n");
           error();
