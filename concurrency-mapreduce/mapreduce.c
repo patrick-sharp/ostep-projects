@@ -16,14 +16,19 @@
   `map` will call `MR_Emit` on all keys/values that need to be reduced.
   `MR_Emit` can be called multiple times with the same key and value - that just means
   an extra copy of that key/value pair should be stored in the key/value pair list.
-  My implentation of the key/value pair list is a dynamic array of KeyAndValues structs where each struct
-  contains a key and a dynamic array of values.
+  The number of reducers is the number of partitions. Since each key has a partition, map
+  can add any key to any partition because you never know what key map will call MR_Emit with.
+  My implentation of the key/value pair list is a an array of num_reducers KVStore structs.
+  KVStore structs are basically lockable dynamic arrays of KeyAndValues structs. KeyAndValues structs
+  have a key string and a dynamic arrays of value strings.
   When `MR_Emit` is called, it looks for the key. If it finds it, it adds the value to the list.
   If it doesn't, it adds a new struct with that key and one member of its list (the value).
+  Each KVStore struct must be lockable so that you don't get the same key added twice or a key
+  overriding the position of a previous key.
 
   2. Sorting phase
   Sort the outer array of KeyAndValues structs by key.
-  Sort each array of values.
+  Sort each array of values alphabetically.
 
   3. Reducing phase
   Reduce is called once per unique key.
