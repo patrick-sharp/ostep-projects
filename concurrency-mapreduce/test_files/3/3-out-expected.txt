@@ -1,0 +1,9 @@
+ 10
+brown 10
+dog 10
+fox 10
+jumps 10
+lazy 10
+over 10
+quick 10
+the 20
