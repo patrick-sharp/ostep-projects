@@ -78,6 +78,15 @@ Blocks 59-999 (bytes 30209-512000)
 #define DATA_START   (59)
 #define NUM_BLOCKS (1000)
 
+#define INODE_SIZE (64) // in bytes
+
+typedef unsigned short u16;
+typedef unsigned int   u32;
+typedef unsigned char  uchar;
+
+u32 xint(u32 x);
+u16 xshort(u16 x);
+
 int main(int argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "Usage: xcheck <file_system_image>\n");
@@ -97,5 +106,43 @@ int main(int argc, char **argv) {
   char *file_bytes = mmap(NULL,statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
   assert(file_bytes != MAP_FAILED);
   close(fd);
+  
+  // ERROR: bad inode
+  for (int i = BSIZE * INODE_START; i < BMAP_START * BSIZE; i += INODE_SIZE) {
+    u16 *inode_type_p = (u16 *) (file_bytes + i);
+    u16 inode_type = xshort(*inode_type_p);
+    if (   inode_type != 0 // unallocated
+        && inode_type != T_DIR
+        && inode_type != T_FILE
+        && inode_type != T_DEV ) {
+      fprintf(stderr, "ERROR: bad inode.\n");
+      exit(1);
+    }
+
+  }
+
+
+
+  assert(0 == munmap(file_bytes, statbuf.st_size));
   return 0;
+}
+
+// swaps endian-ness of x
+u16 xshort(u16 x) {
+  u16 y;
+  uchar *a = (uchar*)&y;
+  a[0] = x;
+  a[1] = x >> 8;
+  return y;
+}
+
+// swaps endian-ness of x
+u32 xint(u32 x) {
+  u32 y;
+  uchar *a = (uchar*)&y;
+  a[0] = x;
+  a[1] = x >> 8;
+  a[2] = x >> 16;
+  a[3] = x >> 24;
+  return y;
 }

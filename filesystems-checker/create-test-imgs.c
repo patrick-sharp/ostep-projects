@@ -40,7 +40,8 @@ Blocks 59-999 (bytes 30209-512000)
 
 // The following definitions are paraphrased from the xv6 project
 
-#define BSIZE 512  // block size
+#define BSIZE       512  // block size
+#define INODE_START  32  // first inode block index
 
 typedef unsigned short u16;
 typedef unsigned int   u32;
@@ -161,13 +162,13 @@ int copy_base_img(char *dest_file_name);
 int main(int argc, char **argv) {
   // initialize the superblock
   sb = (superblock) {
-    xint(1000), // size
-    xint(941),  // nblocks
-    xint(200),  // ninodes
-    xint(30),   // nlog
-    xint(2),    // logstart
-    xint(32),   // inodestart
-    xint(58)    // bmapstart
+    xint(1000),          // size
+    xint(941),           // nblocks
+    xint(200),           // ninodes
+    xint(30),            // nlog
+    xint(2),             // logstart
+    xint(INODE_START),   // inodestart
+    xint(58)             // bmapstart
   };
 
   // initialize the first inode (empty)
@@ -283,6 +284,12 @@ int main(int argc, char **argv) {
   // Now that we're done making the base case disk image (tests/3.img),
   // It's time to subtly break that disk image to make the other tests.
   int test_4_fd = copy_base_img("./tests/4.img");
+  // file byte offset for the 12th inode struct
+  int inode_type_offset = INODE_START * BSIZE + 12 * sizeof(dinode);
+  assert(inode_type_offset == lseek(test_4_fd, inode_type_offset, 0));
+  u16 bad_inode_type = 0xAAAA;
+  // write two bytes over the location of the u16 for the inode type
+  assert(2 == write(test_4_fd, (char *) (&bad_inode_type), 2));
   assert(0 == close(test_4_fd));
 
   return 0;
