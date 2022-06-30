@@ -61,7 +61,5 @@ Blocks 59-999 (bytes 30209-512000)
 */
 
 int main(int argc, char **argv) {
-  printf("%d\n", 0b1101);
-  printf("%lu\n", sizeof(unsigned int));
   return 0;
 }

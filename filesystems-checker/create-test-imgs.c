@@ -225,7 +225,7 @@ int main(int argc, char **argv) {
 
   // Now that our data is intialized, it's time to start writing to the disk image file
 
-  fsfd = open("./base-mine.img", O_RDWR|O_CREAT|O_TRUNC, 0666);
+  fsfd = open("./tests/1.img", O_RDWR|O_CREAT|O_TRUNC, 0666);
   if(fsfd < 0){
     perror(argv[1]);
     exit(1);
