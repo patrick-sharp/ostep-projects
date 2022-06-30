@@ -1,1 +1,1 @@
-Check a file system with no problems
+Test that the "Usage" message displays if called with 0 args.

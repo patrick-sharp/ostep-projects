@@ -1,5 +1,11 @@
+#include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
-#include <stdint.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /*
 
@@ -60,6 +66,36 @@ Blocks 59-999 (bytes 30209-512000)
   This is where the actual data blocks are stored.
 */
 
+#define BSIZE (512)
+#define T_DIR   (1)
+#define T_FILE  (2)
+#define T_DEV   (3)
+
+#define SB_START      (1)
+#define LOG_START     (2)
+#define INODE_START  (32)
+#define BMAP_START   (58)
+#define DATA_START   (59)
+#define NUM_BLOCKS (1000)
+
 int main(int argc, char **argv) {
+  if (argc != 2) {
+    fprintf(stderr, "Usage: xcheck <file_system_image>\n");
+    exit(1);
+  }
+  int fd = open(argv[1], O_RDONLY);
+  if (fd < 0) {
+    if (errno == ENOENT) {
+      fprintf(stderr, "image not found.\n");
+    } else {
+      perror("could not open image");
+    }
+    exit(1);
+  }
+  struct stat statbuf;
+  assert(0 == fstat(fd, &statbuf));
+  char *file_bytes = mmap(NULL,statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  assert(file_bytes != MAP_FAILED);
+  close(fd);
   return 0;
 }

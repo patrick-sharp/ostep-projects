@@ -7,4 +7,7 @@ xcheck: xcheck.c
 	gcc -o xcheck xcheck.c -Wall -Werror -O
 
 clean:
-	rm xcheck && rm tests/*.img
+	rm xcheck create-test-imgs tests/*.img
+
+test:
+	make && ./create-test-imgs && ./test-xcheck.sh

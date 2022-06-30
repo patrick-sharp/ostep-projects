@@ -156,6 +156,7 @@ int write_block_or_die(char buf[BSIZE], char *message);
 int write_bytes(void *bytes, size_t size);
 int write_zero_block();
 int write_string_block(char *str);
+int copy_base_img(char *dest_file_name);
 
 int main(int argc, char **argv) {
   // initialize the superblock
@@ -225,7 +226,7 @@ int main(int argc, char **argv) {
 
   // Now that our data is intialized, it's time to start writing to the disk image file
 
-  fsfd = open("./tests/1.img", O_RDWR|O_CREAT|O_TRUNC, 0666);
+  fsfd = open("./tests/3.img", O_RDWR|O_CREAT|O_TRUNC, 0666);
   if(fsfd < 0){
     perror(argv[1]);
     exit(1);
@@ -278,6 +279,11 @@ int main(int argc, char **argv) {
   }
   assert(1000 * BSIZE == byte_index);
   assert(1000 == block_index);
+
+  // Now that we're done making the base case disk image (tests/3.img),
+  // It's time to subtly break that disk image to make the other tests.
+  int test_4_fd = copy_base_img("./tests/4.img");
+  assert(0 == close(test_4_fd));
 
   return 0;
 }
@@ -339,4 +345,33 @@ int write_string_block(char *str) {
     buf[i] = str[i];
   }
   return write_block_or_die(buf, "write string block");
+}
+
+// copies the base img (tests/1.img) into a new file at dest_file_name.
+// returns the file descriptor of the destination file.
+int copy_base_img(char *dest_file_name) {
+  char buf[4096];
+  ssize_t nread;
+
+  int dest_fd = open(dest_file_name, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+  if (dest_fd < 0) {
+    perror("could not open destination file for copying");
+    exit(1);
+  }
+
+  assert(0 == lseek(fsfd, 0, 0));
+  while (nread = read(fsfd, buf, sizeof buf), nread > 0) {
+    char *out_ptr = buf;
+    ssize_t nwritten;
+
+    do {
+      nwritten = write(dest_fd, out_ptr, nread);
+
+      if (nwritten >= 0) {
+        nread -= nwritten;
+        out_ptr += nwritten;
+      }
+    } while (nread > 0);
+  }
+  return dest_fd;
 }
