@@ -13,9 +13,12 @@ LOGSIZE:   30 blocks (not used for this project)
 sizeof(struct dinode): 64 bytes
 inode types: 1 (Directory), 2 (File), 3 (Device)
 
+DIRSIZ: 14 files max per directory
+sizeof(struct dirent): 16 bytes
+
 
 nbitmap = 1       // Number of bitmap blocks
-ninodeblocks = 26 // Number of inode blocks
+ninodeblocks = 25 // Number of inode blocks
 nlog = 30;        // Number of log blocks
 nmeta = 59        // Number of meta blocks (boot, sb, nlog, inode, bitmap)
 nblocks = 941     // Number of data blocks
@@ -55,12 +58,6 @@ Block 58 (bytes 29697-30208)
   This block is for the block bitmap. Xv6 does not have an inode bitmap.
 Blocks 59-999 (bytes 30209-512000)
   This is where the actual data blocks are stored.
-
-
-
-
-
-
 */
 
 int main(int argc, char **argv) {
