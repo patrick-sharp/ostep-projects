@@ -296,7 +296,7 @@ int main(int argc, char **argv) {
   assert(2 == write(test_4_fd, (void *) (&bad_inode_type), 2));
   assert(0 == close(test_4_fd));
 
-  // TEST 5: bad direct address in inode (unallocated)
+  // TEST 5: bad direct address in inode (free in bitmap)
   int test_5_fd = copy_base_img("./tests/5.img");
   // This is where the 2nd direct address of the root inode is stored
   int root_addr_offset = INODE_START * BSIZE + sizeof(dinode) + 16; // 4 u16s, 2 u32s
@@ -314,14 +314,16 @@ int main(int argc, char **argv) {
   assert(0 == close(test_6_fd));
 
   // TEST 7: bad direct address in inode (> 1000)
-  int test_7_fd = copy_base_img("./tests/5.img");
+  int test_7_fd = copy_base_img("./tests/7.img");
   // This is where the 2nd direct address of the root inode is stored
   assert(root_addr_offset == lseek(test_5_fd, root_addr_offset, 0));
   bad_inode_addr = 1000; // out of a possible 999
   assert(4 == write(test_7_fd, (void *) (&bad_inode_addr), 4));
   assert(0 == close(test_7_fd));
 
-  // TEST 6: bad indirect address in inode
+  // TEST 8: bad indirect address in inode (free in bitmap)
+  // TEST 9: bad indirect address in inode (in meta block)
+  // TEST 10: bad indirect address in inode (> 1000)
   // TEST 7: root directory does not exist
   // TEST 8: directory not properly formatted
   // TEST 9: address used by inode but marked free in bitmap
