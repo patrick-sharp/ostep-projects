@@ -167,6 +167,29 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
+  // ERROR: directory not properly formatted.
+  for (int i = 0; i < NINODES; i++) {
+    void *ptr = file_bytes + INODE_START * BSIZE + i * INODE_SIZE;
+    u16 type = xshort(*((u16 *) ptr));
+    if (type == T_DIR) {
+      ptr += 4 * sizeof(u16) + sizeof(u32);
+      u32 addr = xint(*((u32 *) ptr));
+      ptr = file_bytes + addr * BSIZE;
+      u16 inum = xshort(*((u16 *) ptr));
+      ptr += sizeof(u16);
+      char *self_name = (char *) (ptr);
+      ptr += DIRENT_SIZE;
+      char *parent_name = (char *) (ptr);
+      if (   inum != i 
+          || strcmp(self_name, ".") != 0 
+          || strcmp(parent_name, "..") != 0) {
+        fprintf(stderr, "ERROR: directory not properly formatted.\n");
+        exit(1);
+      }
+    }
+  }
+
+
   assert(0 == munmap(file_bytes, statbuf.st_size));
   return 0;
 }

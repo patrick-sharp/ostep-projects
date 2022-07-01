@@ -366,7 +366,14 @@ int main(int argc, char **argv) {
   assert(2 == write(test_fd, (void *) (&bad_inode_num), 2));
   assert(0 == close(test_fd));
   
-  // TEST 8: directory not properly formatted
+  // TEST 12: directory not properly formatted
+  test_fd = copy_base_img("./tests/12.img");
+  int root_parent_name_offset = DATA_START * BSIZE + sizeof(dirent) + sizeof(u16);
+  assert(root_parent_name_offset == lseek(test_fd, root_parent_name_offset, 0));
+  char *bad_inode_name = "...";
+  assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
+  assert(0 == close(test_fd));
+
   // TEST 9: address used by inode but marked free in bitmap
   // TEST 10: bitmap marks block in use but it is not in use
   // TEST 11: direct address used more than once
