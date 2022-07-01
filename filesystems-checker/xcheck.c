@@ -142,7 +142,18 @@ int main(int argc, char **argv) {
     }
 
     // ERROR: bad indirect address in inode.
-    //u32 indirect_addr = ((u32 *) (file_bytes + BMAP_START * BSIZE + i * INODE_SIZE + 12))[NDIRECT];
+    u32 indirect_addr = ((u32 *) (  file_bytes 
+                                  + INODE_START * BSIZE 
+                                  + i * INODE_SIZE 
+                                  + 4 * sizeof(u16)
+                                  + sizeof(u32)
+          ))[NDIRECT];
+    if (   (indirect_addr != 0 && indirect_addr < DATA_START) 
+        || indirect_addr > NUM_BLOCKS 
+        || !isNthBit1(bitmap, indirect_addr)) {
+      fprintf(stderr, "ERROR: bad indirect address in inode.\n");
+      exit(1);
+    }
   }
 
 
