@@ -40,8 +40,9 @@ Blocks 59-999 (bytes 30209-512000)
 
 // The following definitions are paraphrased from the xv6 project
 
-#define BSIZE       512  // block size
-#define INODE_START  32  // first inode block index
+#define BSIZE       (512)  // block size
+#define INODE_START  (32)  // first inode block index
+#define DATA_START   (59)  // first inode block index
 
 typedef unsigned short u16;
 typedef unsigned int   u32;
@@ -357,7 +358,14 @@ int main(int argc, char **argv) {
   assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
   assert(0 == close(test_fd));
 
-  // TEST 7: root directory does not exist
+  // TEST 11: root directory does not exist (parent links to wrong inode number)
+  test_fd = copy_base_img("./tests/11.img");
+  int root_parent_dirent_offset = DATA_START * BSIZE + sizeof(dirent);
+  assert(root_parent_dirent_offset == lseek(test_fd, root_parent_dirent_offset, 0));
+  u16 bad_inode_num = 0xAAAA; // should be 1 in proper filesystem
+  assert(2 == write(test_fd, (void *) (&bad_inode_num), 2));
+  assert(0 == close(test_fd));
+  
   // TEST 8: directory not properly formatted
   // TEST 9: address used by inode but marked free in bitmap
   // TEST 10: bitmap marks block in use but it is not in use

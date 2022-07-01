@@ -80,9 +80,10 @@ Blocks 59-999 (bytes 30209-512000)
 #define DATA_START   (59)
 #define NUM_BLOCKS (1000)
 
-#define INODE_SIZE (64) // in bytes
-#define NDIRECT (12) // number of direct addresses per inode
-#define NINODES (200) // number of inodes
+#define INODE_SIZE  (64) // in bytes
+#define DIRENT_SIZE (16) // in bytes
+#define NDIRECT     (12) // number of direct addresses per inode
+#define NINODES    (200) // number of inodes
 
 typedef unsigned short u16;
 typedef unsigned int   u32;
@@ -156,7 +157,15 @@ int main(int argc, char **argv) {
     }
   }
 
-
+  // ERROR: root directory does not exist.
+  int root_self_dirent_offset = DATA_START * BSIZE;
+  u16 root_self_inum = xshort(*((u16 *) (file_bytes + root_self_dirent_offset)));
+  int root_parent_dirent_offset = DATA_START * BSIZE + DIRENT_SIZE;
+  u16 root_parent_inum = xshort(*((u16 *) (file_bytes + root_parent_dirent_offset)));
+  if (root_self_inum != 1 || root_parent_inum != 1) {
+    fprintf(stderr, "ERROR: root directory does not exist.\n");
+    exit(1);
+  }
 
   assert(0 == munmap(file_bytes, statbuf.st_size));
   return 0;
