@@ -18,10 +18,10 @@ NDIRECT:   12 maximum direct links per file
 IPB:        8 inodes per block
 LOGSIZE:   30 blocks (not used for this project)
 
-sizeof(struct dinode): 64 bytes
+sizeof(struct inode): 64 bytes. This is called "dinode" in xv6, but that's weird.
 inode types: 1 (Directory), 2 (File), 3 (Device)
 
-DIRSIZ: 14 files max per directory
+DIRSIZ: 14 characters max per file name
 sizeof(struct dirent): 16 bytes
 
 
@@ -80,6 +80,12 @@ Blocks 59-999 (bytes 30209-512000)
 #define DATA_START   (59)
 #define NUM_BLOCKS (1000)
 
+#define SB_START_BYTES      (512)
+#define LOG_START_BYTES    (1024)
+#define INODE_START_BYTES (16384)
+#define BMAP_START_BYTES  (29696)
+#define DATA_START_BYTES  (30208)
+
 #define INODE_SIZE  (64) // in bytes
 #define DIRENT_SIZE (16) // in bytes
 #define NDIRECT     (12) // number of direct addresses per inode
@@ -89,10 +95,32 @@ typedef unsigned short u16;
 typedef unsigned int   u32;
 typedef unsigned char  u8;
 
+typedef struct {
+  u16 type;           // File type
+  u16 major;          // Major device number (T_DEV only)
+  u16 minor;          // Minor device number (T_DEV only)
+  u16 nlink;          // Number of links to inode in file system
+  u32 size;            // Size of file (bytes)
+  u32 addrs[NDIRECT+1];   // Data block addresses
+} inode; // 64 bytes, so there are 8 per block
+
+// Directory is a file containing a sequence of dirent structures.
+#define DIRSIZ (14)
+
+typedef struct {
+  u16  inum;
+  char name[DIRSIZ];
+} dirent; // 16 bytes, so there are 32 per block
+
 u32 xint(u32 x);
 u16 xshort(u16 x);
 
+inode *get_nth_inode(int n);
+dirent *get_nth_dirent(inode *inode_p, int n);
+
 bool isNthBit1 (void *bitmap, int n);
+
+void *file_bytes;
 
 int main(int argc, char **argv) {
   if (argc != 2) {
@@ -110,14 +138,14 @@ int main(int argc, char **argv) {
   }
   struct stat statbuf;
   assert(0 == fstat(fd, &statbuf));
-  char *file_bytes = mmap(NULL,statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  file_bytes = mmap(NULL,statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
   assert(file_bytes != MAP_FAILED);
   close(fd);
   
   // ERROR: bad inode
-  for (int i = BSIZE * INODE_START; i < BMAP_START * BSIZE; i += INODE_SIZE) {
-    u16 *inode_type_p = (u16 *) (file_bytes + i);
-    u16 inode_type = xshort(*inode_type_p);
+  for (int i = 0; i < NINODES; i++) {
+    inode *ip = get_nth_inode(i);
+    u16 inode_type = xshort(ip->type);
     if (   inode_type != 0 // unallocated
         && inode_type != T_DIR
         && inode_type != T_FILE
@@ -130,38 +158,40 @@ int main(int argc, char **argv) {
 
   char *bitmap = file_bytes + BSIZE * BMAP_START;
   for (int i = 0; i < NINODES; i++) {
+    inode *ip = get_nth_inode(i);
     // ERROR: bad direct address in inode.
     for (int j = 0; j < NDIRECT; j++) {
-      u32 direct_addr = xint(((u32 *) (file_bytes + INODE_START * BSIZE + i * INODE_SIZE + 12))[j]);
+      //direct_addr = xint(((u32 *) (file_bytes + INODE_START * BSIZE + i * INODE_SIZE + 12))[j]);
+      u32 direct_addr = xint(ip->addrs[j]);
       // since unallocated blocks are 0 and the bitmap is all 1s for the meta blocks, this works
-      if (   (direct_addr != 0 && direct_addr < DATA_START) 
-          || direct_addr > NUM_BLOCKS 
-          || !isNthBit1(bitmap, direct_addr)) {
+      if ((direct_addr != 0 && direct_addr < DATA_START) || direct_addr >= NUM_BLOCKS) {
         fprintf(stderr, "ERROR: bad direct address in inode.\n");
+        exit(1);
+      } else if (!isNthBit1(bitmap, direct_addr)) {
+        // ERROR: address used by inode but marked free in bitmap. 
+        // this one is out of order because I already completed it by accident while
+        // catching "bad direct address in inode"
+        fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
         exit(1);
       }
     }
 
     // ERROR: bad indirect address in inode.
-    u32 indirect_addr = ((u32 *) (  file_bytes 
-                                  + INODE_START * BSIZE 
-                                  + i * INODE_SIZE 
-                                  + 4 * sizeof(u16)
-                                  + sizeof(u32)
-          ))[NDIRECT];
-    if (   (indirect_addr != 0 && indirect_addr < DATA_START) 
-        || indirect_addr > NUM_BLOCKS 
-        || !isNthBit1(bitmap, indirect_addr)) {
+    u32 indirect_addr = xint(ip->addrs[NDIRECT]);
+    if ((indirect_addr != 0 && indirect_addr < DATA_START) || 
+        indirect_addr > NUM_BLOCKS || 
+        !isNthBit1(bitmap, indirect_addr)) {
       fprintf(stderr, "ERROR: bad indirect address in inode.\n");
       exit(1);
     }
   }
 
   // ERROR: root directory does not exist.
-  int root_self_dirent_offset = DATA_START * BSIZE;
-  u16 root_self_inum = xshort(*((u16 *) (file_bytes + root_self_dirent_offset)));
-  int root_parent_dirent_offset = DATA_START * BSIZE + DIRENT_SIZE;
-  u16 root_parent_inum = xshort(*((u16 *) (file_bytes + root_parent_dirent_offset)));
+  inode *root_ip = get_nth_inode(1);
+  dirent *root_self_dirent = get_nth_dirent(root_ip, 0);
+  dirent *root_parent_dirent = root_self_dirent + 1;
+  u16 root_self_inum = xshort(root_self_dirent->inum);
+  u16 root_parent_inum = xshort(root_parent_dirent->inum);
   if (root_self_inum != 1 || root_parent_inum != 1) {
     fprintf(stderr, "ERROR: root directory does not exist.\n");
     exit(1);
@@ -169,26 +199,34 @@ int main(int argc, char **argv) {
 
   // ERROR: directory not properly formatted.
   for (int i = 0; i < NINODES; i++) {
-    void *ptr = file_bytes + INODE_START * BSIZE + i * INODE_SIZE;
-    u16 type = xshort(*((u16 *) ptr));
+    inode *ip = get_nth_inode(i);
+    u16 type = xshort(ip->type);
     if (type == T_DIR) {
-      ptr += 4 * sizeof(u16) + sizeof(u32);
-      u32 addr = xint(*((u32 *) ptr));
-      ptr = file_bytes + addr * BSIZE;
-      u16 inum = xshort(*((u16 *) ptr));
-      ptr += sizeof(u16);
-      char *self_name = (char *) (ptr);
-      ptr += DIRENT_SIZE;
-      char *parent_name = (char *) (ptr);
-      if (   inum != i 
-          || strcmp(self_name, ".") != 0 
-          || strcmp(parent_name, "..") != 0) {
+      dirent *dp0 = get_nth_dirent(ip, 0);
+      u16 inum = xshort(dp0->inum);
+      char *self_name = dp0->name;
+      dirent *dp1 = get_nth_dirent(ip, 1);
+      char *parent_name = dp1->name;
+
+      if (inum != i || 
+          strcmp(self_name, ".") != 0 || 
+          strcmp(parent_name, "..") != 0) {
         fprintf(stderr, "ERROR: directory not properly formatted.\n");
         exit(1);
       }
     }
   }
 
+  // ERROR: bitmap marks block in use but it is not in use.
+  /*for (int i = 0; i < NINODES; i++) {
+    void *ptr = file_bytes 
+              + INODE_START * BSIZE 
+              + i * INODE_SIZE
+              + 4 * sizeof(u16)
+              + sizeof(u32);
+    
+  }*/
+  
 
   assert(0 == munmap(file_bytes, statbuf.st_size));
   return 0;
@@ -218,4 +256,15 @@ bool isNthBit1(void *bitmap, int n) {
   u8 byte = ((u8 *) bitmap)[n/8];
   //printf("%i %i ", byte, 0x1 << (n%8));
   return ((byte & (0x1 << (n%8))) > 0);
+}
+
+inode *get_nth_inode(int n) {
+  assert(n >= 0 && n < 200);
+  return (inode *) (file_bytes + INODE_START_BYTES + n * sizeof(inode));
+}
+
+dirent *get_nth_dirent(inode *inode_p, int n) {
+  assert(n >= 0); // I'm not sure what the upper bound on directories is.
+  assert(xshort(inode_p->type) == T_DIR);
+  return (dirent *) (file_bytes + xshort(inode_p->addrs[0]) * BSIZE + n * sizeof(dirent));
 }

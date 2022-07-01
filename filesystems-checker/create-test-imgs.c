@@ -58,7 +58,7 @@ typedef struct {
   u32 bmapstart;    // Block number of first free map block
 } superblock;
 
-#define NDIRECT 12
+#define NDIRECT (12)
 #define MAXFILE (NDIRECT + NINDIRECT)
 
 // On-disk inode structure
@@ -72,7 +72,7 @@ typedef struct {
 } dinode; // 64 bytes, so there are 8 per block
 
 // Directory is a file containing a sequence of dirent structures.
-#define DIRSIZ 14
+#define DIRSIZ (14) // max chars per filename
 
 typedef struct {
   u16  inum;
@@ -322,7 +322,8 @@ int main(int argc, char **argv) {
   assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
   assert(0 == close(test_fd));
 
-  // TEST 8: bad indirect address in inode (free in bitmap)
+  // TEST 8: address used by inode but marked free in bitmap.
+  // This one is out of order because I accidentally completed it as part of "bad direct address in inode"
   test_fd = copy_base_img("./tests/8.img");
   // This is where the 2nd direct address of the root inode is stored
   int root_indirect_addr_offset = INODE_START * BSIZE + sizeof(dinode) 
@@ -374,8 +375,13 @@ int main(int argc, char **argv) {
   assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
   assert(0 == close(test_fd));
 
-  // TEST 9: address used by inode but marked free in bitmap
-  // TEST 10: bitmap marks block in use but it is not in use
+  // TEST 13: bitmap marks block in use but it is not in use
+  /*test_fd = copy_base_img("./tests/13.img");
+  int root_parent_name_offset = DATA_START * BSIZE + sizeof(dirent) + sizeof(u16);
+  assert(root_parent_name_offset == lseek(test_fd, root_parent_name_offset, 0));
+  char *bad_inode_name = "...";
+  assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
+  assert(0 == close(test_fd));*/
   // TEST 11: direct address used more than once
   // TEST 12: indirect address used more than once
   // TEST 13: inode marked use but not found in a directory
