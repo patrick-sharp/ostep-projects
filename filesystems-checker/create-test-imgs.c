@@ -283,14 +283,56 @@ int main(int argc, char **argv) {
 
   // Now that we're done making the base case disk image (tests/3.img),
   // It's time to subtly break that disk image to make the other tests.
+  
+
+
+  // TEST 4: bad inode
   int test_4_fd = copy_base_img("./tests/4.img");
   // file byte offset for the 12th inode struct
   int inode_type_offset = INODE_START * BSIZE + 12 * sizeof(dinode);
   assert(inode_type_offset == lseek(test_4_fd, inode_type_offset, 0));
   u16 bad_inode_type = 0xAAAA;
   // write two bytes over the location of the u16 for the inode type
-  assert(2 == write(test_4_fd, (char *) (&bad_inode_type), 2));
+  assert(2 == write(test_4_fd, (void *) (&bad_inode_type), 2));
   assert(0 == close(test_4_fd));
+
+  // TEST 5: bad direct address in inode (unallocated)
+  int test_5_fd = copy_base_img("./tests/5.img");
+  // This is where the 2nd direct address of the root inode is stored
+  int root_addr_offset = INODE_START * BSIZE + sizeof(dinode) + 16; // 4 u16s, 2 u32s
+  assert(root_addr_offset == lseek(test_5_fd, root_addr_offset, 0));
+  u32 bad_inode_addr = 500; // out of a possible 999
+  assert(4 == write(test_5_fd, (void *) (&bad_inode_addr), 4));
+  assert(0 == close(test_5_fd));
+
+  // TEST 6: bad direct address in inode (in meta block)
+  int test_6_fd = copy_base_img("./tests/6.img");
+  // This is where the 2nd direct address of the root inode is stored
+  assert(root_addr_offset == lseek(test_5_fd, root_addr_offset, 0));
+  bad_inode_addr = 2; // out of a possible 999
+  assert(4 == write(test_6_fd, (void *) (&bad_inode_addr), 4));
+  assert(0 == close(test_6_fd));
+
+  // TEST 7: bad direct address in inode (> 1000)
+  int test_7_fd = copy_base_img("./tests/5.img");
+  // This is where the 2nd direct address of the root inode is stored
+  assert(root_addr_offset == lseek(test_5_fd, root_addr_offset, 0));
+  bad_inode_addr = 1000; // out of a possible 999
+  assert(4 == write(test_7_fd, (void *) (&bad_inode_addr), 4));
+  assert(0 == close(test_7_fd));
+
+  // TEST 6: bad indirect address in inode
+  // TEST 7: root directory does not exist
+  // TEST 8: directory not properly formatted
+  // TEST 9: address used by inode but marked free in bitmap
+  // TEST 10: bitmap marks block in use but it is not in use
+  // TEST 11: direct address used more than once
+  // TEST 12: indirect address used more than once
+  // TEST 13: inode marked use but not found in a directory
+  // TEST 14: inode referred to in directory but marked free
+  // TEST 15: bad reference count for file
+  // TEST 16: directory appears more than once in file system
+  
 
   return 0;
 }

@@ -3,9 +3,11 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 /*
 
@@ -79,13 +81,17 @@ Blocks 59-999 (bytes 30209-512000)
 #define NUM_BLOCKS (1000)
 
 #define INODE_SIZE (64) // in bytes
+#define NDIRECT (12) // number of direct addresses per inode
+#define NINODES (200) // number of inodes
 
 typedef unsigned short u16;
 typedef unsigned int   u32;
-typedef unsigned char  uchar;
+typedef unsigned char  u8;
 
 u32 xint(u32 x);
 u16 xshort(u16 x);
+
+bool isNthBit1 (void *bitmap, int n);
 
 int main(int argc, char **argv) {
   if (argc != 2) {
@@ -118,7 +124,25 @@ int main(int argc, char **argv) {
       fprintf(stderr, "ERROR: bad inode.\n");
       exit(1);
     }
+  }
 
+
+  char *bitmap = file_bytes + BSIZE * BMAP_START;
+  for (int i = 0; i < NINODES; i++) {
+    // ERROR: bad direct address in inode.
+    for (int j = 0; j < NDIRECT; j++) {
+      u32 direct_addr = xint(((u32 *) (file_bytes + INODE_START * BSIZE + i * INODE_SIZE + 12))[j]);
+      // since unallocated blocks are 0 and the bitmap is all 1s for the meta blocks, this works
+      if (   (direct_addr != 0 && direct_addr < DATA_START) 
+          || direct_addr > NUM_BLOCKS 
+          || !isNthBit1(bitmap, direct_addr)) {
+        fprintf(stderr, "ERROR: bad direct address in inode.\n");
+        exit(1);
+      }
+    }
+
+    // ERROR: bad indirect address in inode.
+    //u32 indirect_addr = ((u32 *) (file_bytes + BMAP_START * BSIZE + i * INODE_SIZE + 12))[NDIRECT];
   }
 
 
@@ -130,7 +154,7 @@ int main(int argc, char **argv) {
 // swaps endian-ness of x
 u16 xshort(u16 x) {
   u16 y;
-  uchar *a = (uchar*)&y;
+  u8 *a = (u8*)&y;
   a[0] = x;
   a[1] = x >> 8;
   return y;
@@ -139,10 +163,16 @@ u16 xshort(u16 x) {
 // swaps endian-ness of x
 u32 xint(u32 x) {
   u32 y;
-  uchar *a = (uchar*)&y;
+  u8 *a = (u8*)&y;
   a[0] = x;
   a[1] = x >> 8;
   a[2] = x >> 16;
   a[3] = x >> 24;
   return y;
+}
+
+bool isNthBit1(void *bitmap, int n) {
+  u8 byte = ((u8 *) bitmap)[n/8];
+  //printf("%i %i ", byte, 0x1 << (n%8));
+  return ((byte & (0x1 << (n%8))) > 0);
 }
