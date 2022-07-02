@@ -5,83 +5,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "xcheck.h"
+
 // This file creates test files for xcheck.
 // The base disk image is a filesystem containing the navy seal copypasta
 // split into 16 short text files (one per sentence) and two empty directories.
 // This program creates that base image and also other variations that are 
 // subtly wrong in ways that xcheck will catch.
-
-
-/*
-Layout of the disk image:
-The disk image is little-endian
-Block 0 (bytes 0-512)
-  First block is empty
-Block 1 (bytes 513-1024)
-  2nd block contains the superblock struct
-    size: 1000 (4 bytes)
-    nblocks: 941 (4 bytes)
-    ninodes: 200 (4 bytes)
-    nlog: 30 (4 bytes)
-    logstart: 2 (4 bytes)
-    inodestart: 32 (4 bytes)
-    bmapstart: 58 (4 bytes)
-Blocks 2-31 (bytes 1025-16384)
-  These blocks are for the log
-Blocks 32-57 (bytes 16385-29696)
-  These blocks are where the inodes are stored.
-  Since the root inode number is 1, the first slot for an inode is empty.
-  The first inode will be at byte 16384 + 64 = 16448.
-Block 58 (bytes 29697-30208)
-  This block is for the block bitmap. Xv6 does not have an inode bitmap.
-Blocks 59-999 (bytes 30209-512000)
-  This is where the actual data blocks are stored.
-*/
-
-// The following definitions are paraphrased from the xv6 project
-
-#define BSIZE       (512)  // block size
-#define INODE_START  (32)  // first inode block index
-#define DATA_START   (59)  // first inode block index
-
-typedef unsigned short u16;
-typedef unsigned int   u32;
-typedef unsigned char  uchar;
-
-typedef struct {
-  u32 size;         // Size of file system image (blocks)
-  u32 nblocks;      // Number of data blocks
-  u32 ninodes;      // Number of inodes.
-  u32 nlog;         // Number of log blocks
-  u32 logstart;     // Block number of first log block
-  u32 inodestart;   // Block number of first inode block
-  u32 bmapstart;    // Block number of first free map block
-} superblock;
-
-#define NDIRECT (12)
-#define NINDIRECT (BSIZE / sizeof(u32))
-#define MAXFILE (NDIRECT + NINDIRECT)
-
-// On-disk inode structure
-typedef struct {
-  u16 type;           // File type
-  u16 major;          // Major device number (T_DEV only)
-  u16 minor;          // Minor device number (T_DEV only)
-  u16 nlink;          // Number of links to inode in file system
-  u32 size;            // Size of file (bytes)
-  u32 addrs[NDIRECT+1];   // Data block addresses
-} dinode; // 64 bytes, so there are 8 per block
-
-// Directory is a file containing a sequence of dirent structures.
-#define DIRSIZ (14) // max chars per filename
-
-typedef struct {
-  u16  inum;
-  char name[DIRSIZ];
-} dirent; // 16 bytes, so there are 32 per block
-
-u32 xint(u32 x);
-u16 xshort(u16 x);
 
 superblock sb;
 
@@ -169,7 +99,7 @@ int main(int argc, char **argv) {
     xint(200),           // ninodes
     xint(30),            // nlog
     xint(2),             // logstart
-    xint(INODE_START),   // inodestart
+    xint(INODESTART),   // inodestart
     xint(58)             // bmapstart
   };
 
@@ -291,7 +221,7 @@ int main(int argc, char **argv) {
   // TEST 4: bad inode
   int test_fd = copy_base_img("./tests/4.img");
   // file byte offset for the 12th inode struct
-  int inode_type_offset = INODE_START * BSIZE + 12 * sizeof(dinode);
+  int inode_type_offset = INODESTART * BSIZE + 12 * sizeof(dinode);
   assert(inode_type_offset == lseek(test_fd, inode_type_offset, 0));
   u16 bad_inode_type = 0xAAAA;
   // write two bytes over the location of the u16 for the inode type
@@ -301,7 +231,7 @@ int main(int argc, char **argv) {
   // TEST 5: bad direct address in inode (free in bitmap)
   test_fd = copy_base_img("./tests/5.img");
   // This is where the 2nd direct address of the root inode is stored
-  int root_addr_offset = INODE_START * BSIZE + sizeof(dinode) + 16; // 4 u16s, 2 u32s
+  int root_addr_offset = INODESTART * BSIZE + sizeof(dinode) + 16; // 4 u16s, 2 u32s
   assert(root_addr_offset == lseek(test_fd, root_addr_offset, 0));
   u32 bad_inode_addr = 500; // out of a possible 999
   assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
@@ -327,7 +257,7 @@ int main(int argc, char **argv) {
   // This one is out of order because I accidentally completed it as part of "bad direct address in inode"
   test_fd = copy_base_img("./tests/8.img");
   // This is where the 2nd direct address of the root inode is stored
-  int root_indirect_addr_offset = INODE_START * BSIZE + sizeof(dinode) 
+  int root_indirect_addr_offset = INODESTART * BSIZE + sizeof(dinode) 
                                 + 4 * sizeof(u16) 
                                 + sizeof(u32)
                                 + (NDIRECT * sizeof(u32)); 
@@ -339,7 +269,7 @@ int main(int argc, char **argv) {
   // TEST 9: bad indirect address in inode (in meta block)
   test_fd = copy_base_img("./tests/9.img");
   // This is where the 2nd direct address of the root inode is stored
-  root_indirect_addr_offset = INODE_START * BSIZE + sizeof(dinode) 
+  root_indirect_addr_offset = INODESTART * BSIZE + sizeof(dinode) 
                                 + 4 * sizeof(u16) 
                                 + sizeof(u32)
                                 + (NDIRECT * sizeof(u32)); 
@@ -351,7 +281,7 @@ int main(int argc, char **argv) {
   // TEST 10: bad indirect address in inode (> 1000)
   test_fd = copy_base_img("./tests/10.img");
   // This is where the 2nd direct address of the root inode is stored
-  root_indirect_addr_offset = INODE_START * BSIZE + sizeof(dinode) 
+  root_indirect_addr_offset = INODESTART * BSIZE + sizeof(dinode) 
                                 + 4 * sizeof(u16) 
                                 + sizeof(u32)
                                 + (NDIRECT * sizeof(u32)); 
@@ -362,7 +292,7 @@ int main(int argc, char **argv) {
 
   // TEST 11: root directory does not exist (parent links to wrong inode number)
   test_fd = copy_base_img("./tests/11.img");
-  int root_parent_dirent_offset = DATA_START * BSIZE + sizeof(dirent);
+  int root_parent_dirent_offset = DATASTART * BSIZE + sizeof(dirent);
   assert(root_parent_dirent_offset == lseek(test_fd, root_parent_dirent_offset, 0));
   u16 bad_inode_num = 0xAAAA; // should be 1 in proper filesystem
   assert(2 == write(test_fd, (void *) (&bad_inode_num), 2));
@@ -370,7 +300,7 @@ int main(int argc, char **argv) {
   
   // TEST 12: directory not properly formatted
   test_fd = copy_base_img("./tests/12.img");
-  int root_parent_name_offset = DATA_START * BSIZE + sizeof(dirent) + sizeof(u16);
+  int root_parent_name_offset = DATASTART * BSIZE + sizeof(dirent) + sizeof(u16);
   assert(root_parent_name_offset == lseek(test_fd, root_parent_name_offset, 0));
   char *bad_inode_name = "...";
   assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
@@ -378,7 +308,7 @@ int main(int argc, char **argv) {
 
   // TEST 13: bitmap marks block in use but it is not in use
   /*test_fd = copy_base_img("./tests/13.img");
-  int root_parent_name_offset = DATA_START * BSIZE + sizeof(dirent) + sizeof(u16);
+  int root_parent_name_offset = DATASTART * BSIZE + sizeof(dirent) + sizeof(u16);
   assert(root_parent_name_offset == lseek(test_fd, root_parent_name_offset, 0));
   char *bad_inode_name = "...";
   assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
@@ -395,25 +325,6 @@ int main(int argc, char **argv) {
 }
 
 
-// converts a u16 to little endian
-u16 xshort(u16 x) {
-  u16 y;
-  uchar *a = (uchar*)&y;
-  a[0] = x;
-  a[1] = x >> 8;
-  return y;
-}
-
-// converts a u32 to little endian
-u32 xint(u32 x) {
-  u32 y;
-  uchar *a = (uchar*)&y;
-  a[0] = x;
-  a[1] = x >> 8;
-  a[2] = x >> 16;
-  a[3] = x >> 24;
-  return y;
-}
 
 int write_block_or_die(char buf[BSIZE], char *message) {
   if (write(fsfd, buf, BSIZE) != BSIZE){
