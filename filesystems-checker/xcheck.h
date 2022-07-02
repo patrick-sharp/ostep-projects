@@ -31,7 +31,7 @@ typedef unsigned int   u32;
 
 // superblock data
 #define FSSIZE   (1000)
-#define NDATA     (941)
+#define NBLOCKS   (941) // number of data blocks
 #define NINODES   (200)
 #define NLOG       (30)
 #define LOGSTART    (2)
