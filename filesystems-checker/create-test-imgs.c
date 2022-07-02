@@ -59,6 +59,7 @@ typedef struct {
 } superblock;
 
 #define NDIRECT (12)
+#define NINDIRECT (BSIZE / sizeof(u32))
 #define MAXFILE (NDIRECT + NINDIRECT)
 
 // On-disk inode structure
