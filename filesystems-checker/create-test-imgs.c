@@ -23,7 +23,8 @@
 // subtly wrong in ways that xcheck will catch.
 
 int open_test_file();
-int copy_base_img(char *dest_file_name);
+void copy_base_img(int dest_fd);
+void make_test_file(char *error, int offset, void *new_bytes, size_t new_bytes_len);
 
 int write_block_or_die(char buf[BSIZE], char *message);
 int write_bytes(void *bytes, size_t size);
@@ -135,14 +136,11 @@ int main(int argc, char **argv) {
 
   // write the block bitmap
   // I made it a char array just for convenience of visualization.                 
-  /*char bitmap[10] = { 0xFF, 0xFF, 0xFF, 0xFF,
-                      0xFF, 0xFF, 0xFF, 0xFF,
-                      0xFF, 0x0F };*/
-  u8 bitmap[14] = { 0xFF, 0xFF, 0xFF, 0xFF,
+  u8 bitmap[13] = { 0xFF, 0xFF, 0xFF, 0xFF,
                     0xFF, 0xFF, 0xFF, 0xFF,
                     0xFF, 0xFF, 0xFF, 0xFF,
-                    0xFF, 0x02};
-  assert(DATASTART * BSIZE == write_bytes(bitmap, 14 * sizeof(u8)));
+                    0xFF };
+  assert(DATASTART * BSIZE == write_bytes(bitmap, 13 * sizeof(u8)));
 
   // write the root directory's dirents
   dirent dirents[4] = {
@@ -164,7 +162,7 @@ int main(int argc, char **argv) {
     }
   };
 
-  assert((DATASTART + 1) * BSIZE == write_bytes(dirents, 4 * sizeof(dirent)));
+  assert((DATASTART + 1) * BSIZE == write_bytes(dirents, sizeof(dirents)));
 
   // hex.txt
   // write the direct blocks for hex.txt
@@ -175,11 +173,11 @@ int main(int argc, char **argv) {
     write_char_block(c);
   }
   // write the indirect block for hex.txt
-  u32 hex_addrs[5];
-  for (int i = 0; i < 5; i++) {
+  u32 hex_addrs[4];
+  for (int i = 0; i < 4; i++) {
     hex_addrs[i] = block_index + 1 + i;
   }
-  write_bytes(hex_addrs, 5 * sizeof(u32));
+  write_bytes(hex_addrs, sizeof(hex_addrs));
   // write the children of the indirect block for hex.txt
   for (char c = 'C'; c < 'F'; c++) {
     write_char_block(c);
@@ -190,17 +188,17 @@ int main(int argc, char **argv) {
   
   // letters.txt
   // write the direct blocks for letters.txt
-  for (char c = 'a'; c <= 'k'; c++) {
+  for (char c = 'a'; c <= 'l'; c++) {
     write_char_block(c);
   }
   // write the indirect block for letters.txt
-  u32 letters_addrs[15];
-  for (int i = 0; i < 15; i++) {
+  u32 letters_addrs[14];
+  for (int i = 0; i < 14; i++) {
     letters_addrs[i] = block_index + 1 + i;
   }
   // write the children of the indirect block for letters.txt
-  write_bytes(letters_addrs, 15 * sizeof(u32));
-  for (char c = 'l'; c < 'z'; c++) {
+  write_bytes(letters_addrs, sizeof(letters_addrs));
+  for (char c = 'm'; c < 'z'; c++) {
     write_char_block(c);
   }
   write_char_block_with_newline('z');
@@ -215,8 +213,16 @@ int main(int argc, char **argv) {
 
   // Now that we're done making the base case disk image (tests/3.img),
   // It's time to make some copies and edit them to make the other tests.
+  char *error;
+  int offset;
 
-  // TEST 4: bad inode
+  error = "ERROR: bad inode.\n";
+  // file byte offset for the 3rd inode struct (for hex.txt)
+  offset = INODESTART * BSIZE + 3 * sizeof(dinode);
+  u16 bad_inode_type = 0xAAAA;
+  make_test_file(error, offset, &bad_inode_type, sizeof(u16));
+
+
   /*int test_fd = copy_base_img("./tests/4.img");
   // file byte offset for the 12th inode struct
   int inode_type_offset = INODESTART * BSIZE + 12 * sizeof(dinode);
@@ -379,22 +385,16 @@ int write_char_block_with_newline(char c) {
 // returns fd of opened file
 int open_test_file() {
   char filename[16];
-  assert(0 < snprintf(filename, 16, "./tests/%d.img", test_counter));
+  assert(0 < snprintf(filename, sizeof(filename), "./tests/%d.img", test_counter));
   test_counter++;
   return open(filename, O_RDWR|O_CREAT|O_TRUNC, 0666);
 }
 
-// copies the base img (tests/1.img) into a new file at dest_file_name.
-// returns the file descriptor of the destination file.
-int copy_base_img(char *dest_file_name) {
+// copies the base img (tests/3.img) into a new file with 
+// descriptor dest_fd
+void copy_base_img(int dest_fd) {
   char buf[4096];
   ssize_t nread;
-
-  int dest_fd = open(dest_file_name, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-  if (dest_fd < 0) {
-    perror("could not open destination file for copying");
-    exit(1);
-  }
 
   assert(0 == lseek(fsfd, 0, 0));
   while (nread = read(fsfd, buf, sizeof buf), nread > 0) {
@@ -403,6 +403,7 @@ int copy_base_img(char *dest_file_name) {
 
     do {
       nwritten = write(dest_fd, out_ptr, nread);
+      assert(-1 < nwritten);
 
       if (nwritten >= 0) {
         nread -= nwritten;
@@ -410,5 +411,45 @@ int copy_base_img(char *dest_file_name) {
       }
     } while (nread > 0);
   }
-  return dest_fd;
+}
+
+void make_file_with(char *filename, char *filedata) {
+  //printf("%d %s %s\n", test_counter, filename, filedata);
+  int fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+  assert(-1 < fd);
+  int len = strlen(filedata);
+
+  assert(len == write(fd, filedata, len));
+  assert(0 == close(fd));
+}
+
+void make_test_file(char *error, int offset, void *new_bytes, size_t new_bytes_len) {
+  char filename[16];
+  // make the test #.run file
+  assert(0 < snprintf(filename, sizeof(filename), "./tests/%d.run", test_counter));
+  char run_data[32];
+  assert(0 < snprintf(run_data, sizeof(run_data), "./xcheck ./tests/%d.img\n", test_counter));
+  make_file_with(filename, run_data);
+
+  // make the test #.rc file
+  assert(0 < snprintf(filename, sizeof(filename), "./tests/%d.rc", test_counter));
+  make_file_with(filename, "1\n");
+
+  // make the test #.err file
+  assert(0 < snprintf(filename, sizeof(filename), "./tests/%d.err", test_counter));
+  make_file_with(filename, error);
+
+  // make the test #.out file
+  assert(0 < snprintf(filename, sizeof(filename), "./tests/%d.out", test_counter));
+  make_file_with(filename, "");
+
+  // make the test image. Do this last since it updates the test counter
+  int img_fd = open_test_file();
+  if (img_fd < 0) {
+    perror("could not open destination file for copying");
+    exit(1);
+  }
+  copy_base_img(img_fd);
+  assert(offset == lseek(img_fd, offset, 0));
+  assert(new_bytes_len == write(img_fd, new_bytes, new_bytes_len));
 }

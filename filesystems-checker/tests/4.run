@@ -1,1 +1,1 @@
-./xcheck tests/4.img
+./xcheck ./tests/4.img
