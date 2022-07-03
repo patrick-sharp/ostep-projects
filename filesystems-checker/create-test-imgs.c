@@ -8,218 +8,216 @@
 #include "xcheck.h"
 
 // This file creates test files for xcheck.
-// The base disk image is a filesystem containing the navy seal copypasta
-// split into 16 short text files (one per sentence) and two empty directories.
+// The base disk image is a filesystem containing a root directory 
+// with two files. The first file is called "hex.txt", and it contains 
+// 16 blocks. Each block is 512 copies of one hexadecimal digit. I.E. 
+// this file is "00000...", "11111...", ... "FFFFF...".
+// The second file is called "letters.txt". It contains 26 blocks. 
+// Each block is 512 copies of one lowercase letter of the alphabet.
+// I chose these files because they are easy to see when you open the
+// disk image in a hex editor, and because they require the filesystem
+// to use indirect addresses. Without indirect addresses, we can't test
+// some of the functionality of xcheck.
+//
 // This program creates that base image and also other variations that are 
 // subtly wrong in ways that xcheck will catch.
 
-superblock sb;
-
-// Our base file system has 20 inodes:
-//      1 for the empty first inode
-//      1 for the root directory
-//     16 text files
-//      2 for empty directories
-dinode inodes[20];
-
-dirent root_dir_data[20];
-
-// These will be copied into dirent structs and put in the data block
-// referenced by the root directory.
-char *file_names[20] = {
-       ".",       "..", "10th.txt", "11th.txt", 
-"12th.txt", "13th.txt", "14th.txt", "15th.txt", 
-"16th.txt",  "1st.txt",  "2nd.txt",  "3rd.txt",
- "4th.txt",  "5th.txt",  "6th.txt",  "7th.txt",
- "8th.txt",  "9th.txt", "empty_dir", "other_empty_di"
-};
-
-char *files_data[20] = {
-  NULL, // first inode is empty - no data
-  NULL, // see `root_dir_data`
-
-  " You're fucking dead, kid.\n",
-
-  " I can be anywhere, anytime, and I can kill you in over seven hundred ways, and " \
-  "that's just with my bare hands.\n",
-
-  "Not only am I extensively trained in unarmed combat, but I have access to the " \
-  "entire arsenal of the United States Marine Corps and I will use it to its full " \
-  "extent to wipe your miserable ass off the face of the continent, you little shit.\n",
-
-  " If only you could have known what unholy retribution your little “clever” comment " \
-  "was about to bring down upon you, maybe you would have held your fucking tongue.\n",
-
-  "But you couldn't, you didn't, and now you're paying the price, you goddamn idiot.\n",
-
-  " I will shit fury all over you and you will drown in it.\n",
-
-  "You're fucking dead, kiddo.\n",
-
-  "What the fuck did you just fucking say about me, you little bitch?\n",
-
-  " I'll have you know I graduated top of my class in the Navy Seals, and I've been " \
-  "involved in numerous secret raids on Al-Quaeda, and I have over 300 confirmed kills.\n",
-
-  "I am trained in gorilla warfare and I'm the top sniper in the entire US armed forces.\n",
-
-  " You are nothing to me but just another target.\n",
-
-  " I will wipe you the fuck out with precision the likes of which has never been seen " \
-  "before on this Earth, mark my fucking words.\n",
-
-  "You think you can get away with saying that shit to me over the Internet?\n",
-
-  " Think again, fucker.\n",
-
-  " As we speak I am contacting my secret network of spies across the USA and your IP " \
-  "is being traced right now so you better prepare for the storm, maggot.\n",
-
-  "The storm that wipes out the pathetic little thing you call your life.\n",
-
-  NULL, NULL // empty directories have no data
-};
-
-// global state
-int block_index = 0;
-int byte_index = 0;
-int fsfd;
+int open_test_file();
+int copy_base_img(char *dest_file_name);
 
 int write_block_or_die(char buf[BSIZE], char *message);
 int write_bytes(void *bytes, size_t size);
 int write_zero_block();
 int write_string_block(char *str);
-int copy_base_img(char *dest_file_name);
+int write_char_block(char c);
+int write_char_block_with_newline(char c);
+
+// global state
+int block_index = 0;
+int byte_index = 0;
+int fsfd;
+int test_counter = 3; // the first two are about calling xcheck correctly,
+                      // not about whether it properly catches errors.
 
 int main(int argc, char **argv) {
   // initialize the superblock
-  sb = (superblock) {
-    xint(1000),          // size
-    xint(941),           // nblocks
-    xint(200),           // ninodes
-    xint(30),            // nlog
-    xint(2),             // logstart
-    xint(INODESTART),   // inodestart
-    xint(58)             // bmapstart
+  superblock sb = (superblock) {
+    xint(FSSIZE),  
+    xint(NBLOCKS), 
+    xint(NINODES),
+    xint(NLOG),
+    xint(LOGSTART),
+    xint(INODESTART),
+    xint(BMAPSTART)
   };
-
-  // initialize the first inode (empty)
-  inodes[0] = (dinode) { 0 };
-
-  // initialize the root directory inode 
-  inodes[1] = (dinode) {
-    xshort(1),   // type: directory
-    0,
-    0,
-    xshort(1),   // nlink 
-    xint(512), // size. Directories are 1 block
-    {xint(59), 0, 0, 0, 
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0} // addrs
-  };
-
-  // initialize the text file inodes.
-  for (int i = 2; i < 18; i++) {
-    inodes[i] = (dinode) {
-      xshort(2),   // type: file
-      0,
-      0,
-      xshort(1),   // nlink 
-      xint(strlen(files_data[i])), // size 
-      {xint(59 + i - 1), 0, 0, 0, 
-                      0, 0, 0, 0,
-                      0, 0, 0, 0,
-                      0} // addrs
-    };
-  }
-
-  // initialize the empty sub-directory inodes
-  for (int i = 18; i < 20; i++) {
-    inodes[i] = (dinode) {
-      xshort(2),   // type: file. For some reason, mkfs doesn't understand directories.
-      0,
-      0,
-      xshort(1),   // nlink 
-      0, // size 
-      {0, 0, 0, 0, 
-       0, 0, 0, 0,
-       0, 0, 0, 0,
-       0} // addrs
-    };
-  }
-
-  // intialize the data block for the root directory
-  root_dir_data[0] = (dirent) { xshort(1), { '.' } };
-  root_dir_data[1] = (dirent) { xshort(1), { '.', '.' } };
-  for (int i = 2; i < 20; i++) {
-    root_dir_data[i].inum = xshort(i);
-    memcpy(root_dir_data[i].name, file_names[i], strlen(file_names[i]));
-  }
 
   // Now that our data is intialized, it's time to start writing to the disk image file
-
-  fsfd = open("./tests/3.img", O_RDWR|O_CREAT|O_TRUNC, 0666);
+  fsfd = open_test_file();
   if(fsfd < 0){
     perror(argv[1]);
     exit(1);
   }
 
   // write the first zero block
-  assert(1 * BSIZE == write_zero_block());
+  assert(SBSTART * BSIZE == write_zero_block());
 
   // write the superblock
-  assert(2 * BSIZE == write_bytes(&sb, sizeof(superblock)));
+  assert(LOGSTART * BSIZE == write_bytes(&sb, sizeof(superblock)));
 
-  // log is empty for mkfs, so write zero blocks
-  for (int i = 0; i < 30; i++) {
+  // log is empty for mkfs, so write 30 zero blocks
+  for (int i = 0; i < NLOG; i++) {
     write_zero_block();
   }
-  assert(32 * BSIZE == byte_index);
+  assert(INODESTART * BSIZE == byte_index);
 
-  // write the inodes in batches of 8 (since there are 8 inodes per block)
+  /*// write the inodes in batches of 8 (since there are 8 inodes per block)
   assert(33 * BSIZE == write_bytes(inodes, BSIZE));
   assert(34 * BSIZE == write_bytes(inodes + 8, BSIZE));
-  assert(35 * BSIZE == write_bytes(inodes + 16, 4 * sizeof(dinode)));
+  assert(35 * BSIZE == write_bytes(inodes + 16, 4 * sizeof(dinode)));*/
+
+  // write in an empty inode and our three inodes
+  dinode inodes[4] = { 
+    // empty inode
+    (dinode) {},
+
+    // root inode
+    (dinode) {
+      xshort(T_DIR),      // type
+      0, 0,               // major and minor (not relevant)
+      xshort(1),          // nlink
+      xint(BSIZE),        // size (directories are one block)
+      { xint(DATASTART) } // addrs (root dir gets first block)
+    },
+
+    // hex.txt
+    (dinode) {
+      xshort(T_FILE), // type
+      0, 0,           // major and minor (not relevant)
+      xshort(1),      // nlink
+      xint(8192),     // size (512 * 16 = 8192)
+      { 0 }           // addrs 
+    },
+
+    // letters.txt
+    (dinode) {
+      xshort(T_FILE), // type
+      0, 0,           // major and minor (not relevant)
+      xshort(1),      // nlink
+      xint(13312),    // size (512 * 26 = 13312)
+      { 0 }           // addrs 
+    }
+  };
+
+  // 12 direct blocks
+  //  1 indirect block
+  //  4 children of the indirect block
+  for (int i = 0; i < NDIRECT + 1; i++) {
+    inodes[2].addrs[i] = xint(DATASTART + i + 1);
+  }
+
+  // 12 direct blocks
+  //  1 indirect block
+  // 14 children of the indirect block
+  // The `+ 19` comes from
+  // 1 block of root dir
+  // 17 blocks of hex.txt
+  for (int i = 0; i < NDIRECT + 1; i++) {
+    inodes[3].addrs[i] = xint(DATASTART + i + 18);
+  }
+
+  assert((INODESTART + 1) * BSIZE == write_bytes(inodes, 4 * sizeof(dinode)));
 
   // fill the rest of the inode blocks with zeroes
-  for (int i = 3; i < 26; i++) {
+  for (int i = block_index; i < BMAPSTART; i++) {
     write_zero_block();
   }
-  assert(58 * BSIZE == byte_index);
+  assert(BMAPSTART * BSIZE == byte_index);
 
   // write the block bitmap
   // I made it a char array just for convenience of visualization.                 
-  char bitmap[10] = { 0xFF, 0xFF, 0xFF, 0xFF,
+  /*char bitmap[10] = { 0xFF, 0xFF, 0xFF, 0xFF,
                       0xFF, 0xFF, 0xFF, 0xFF,
-                      0xFF, 0x0F };
-  assert(59 * BSIZE == write_bytes(bitmap, 10 * sizeof(char)));
+                      0xFF, 0x0F };*/
+  u8 bitmap[14] = { 0xFF, 0xFF, 0xFF, 0xFF,
+                    0xFF, 0xFF, 0xFF, 0xFF,
+                    0xFF, 0xFF, 0xFF, 0xFF,
+                    0xFF, 0x02};
+  assert(DATASTART * BSIZE == write_bytes(bitmap, 14 * sizeof(u8)));
 
-  // write the data block for the root directory
-  assert(60 * BSIZE == write_bytes(root_dir_data, 20 * sizeof(dirent)));
+  // write the root directory's dirents
+  dirent dirents[4] = {
+    (dirent) {
+      xshort(1),
+      { '.' }
+    },
+    (dirent) {
+      xshort(1),
+      { '.', '.' }
+    },
+    (dirent) {
+      xshort(2),
+      { 'h', 'e', 'x', '.', 't', 'x', 't' }
+    },
+    (dirent) {
+      xshort(3),
+      { 'l', 'e', 't', 't', 'e', 'r', 's', '.', 't', 'x', 't' }
+    }
+  };
 
-  // write the data blocks for the text files
-  for (int i = 2; i < 18; i++) {
-    write_string_block(files_data[i]);
+  assert((DATASTART + 1) * BSIZE == write_bytes(dirents, 4 * sizeof(dirent)));
+
+  // hex.txt
+  // write the direct blocks for hex.txt
+  for (char c = '0'; c <= '9'; c++) {
+    write_char_block(c);
   }
-  assert(76 * BSIZE == byte_index);
+  for (char c = 'A'; c <= 'B'; c++) {
+    write_char_block(c);
+  }
+  // write the indirect block for hex.txt
+  u32 hex_addrs[5];
+  for (int i = 0; i < 5; i++) {
+    hex_addrs[i] = block_index + 1 + i;
+  }
+  write_bytes(hex_addrs, 5 * sizeof(u32));
+  // write the children of the indirect block for hex.txt
+  for (char c = 'C'; c < 'F'; c++) {
+    write_char_block(c);
+  }
+  write_char_block_with_newline('F');
 
-  // and we're done. The empty dirs don't have data blocks
+  assert (DATASTART + 18 == block_index);
+  
+  // letters.txt
+  // write the direct blocks for letters.txt
+  for (char c = 'a'; c <= 'k'; c++) {
+    write_char_block(c);
+  }
+  // write the indirect block for letters.txt
+  u32 letters_addrs[15];
+  for (int i = 0; i < 15; i++) {
+    letters_addrs[i] = block_index + 1 + i;
+  }
+  // write the children of the indirect block for letters.txt
+  write_bytes(letters_addrs, 15 * sizeof(u32));
+  for (char c = 'l'; c < 'z'; c++) {
+    write_char_block(c);
+  }
+  write_char_block_with_newline('z');
+  assert(DATASTART + 45 == block_index);
 
   // fill the rest of the file system with zeroes
-  for (int i = 76; i < 1000; i++) {
+  for (int i = block_index; i < FSSIZE; i++) {
     write_zero_block();
   }
-  assert(1000 * BSIZE == byte_index);
-  assert(1000 == block_index);
+  assert(FSSIZE * BSIZE == byte_index);
+  assert(FSSIZE == block_index);
 
   // Now that we're done making the base case disk image (tests/3.img),
-  // It's time to subtly break that disk image to make the other tests.
-  
-
+  // It's time to make some copies and edit them to make the other tests.
 
   // TEST 4: bad inode
-  int test_fd = copy_base_img("./tests/4.img");
+  /*int test_fd = copy_base_img("./tests/4.img");
   // file byte offset for the 12th inode struct
   int inode_type_offset = INODESTART * BSIZE + 12 * sizeof(dinode);
   assert(inode_type_offset == lseek(test_fd, inode_type_offset, 0));
@@ -304,7 +302,7 @@ int main(int argc, char **argv) {
   assert(root_parent_name_offset == lseek(test_fd, root_parent_name_offset, 0));
   char *bad_inode_name = "...";
   assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
-  assert(0 == close(test_fd));
+  assert(0 == close(test_fd));*/
 
   // TEST 13: bitmap marks block in use but it is not in use
   /*test_fd = copy_base_img("./tests/13.img");
@@ -321,6 +319,7 @@ int main(int argc, char **argv) {
   // TEST 16: directory appears more than once in file system
   
 
+  assert(0 == close(fsfd));
   return 0;
 }
 
@@ -362,6 +361,27 @@ int write_string_block(char *str) {
     buf[i] = str[i];
   }
   return write_block_or_die(buf, "write string block");
+}
+
+int write_char_block(char c) {
+  char buf[BSIZE];
+  memset(buf, c, BSIZE);
+  return write_block_or_die(buf, "write char block");
+}
+
+int write_char_block_with_newline(char c) {
+  char buf[BSIZE];
+  memset(buf, c, BSIZE);
+  buf[BSIZE - 1] = 0x0A; // newline ascii code
+  return write_block_or_die(buf, "write char block with newline");
+}
+
+// returns fd of opened file
+int open_test_file() {
+  char filename[16];
+  assert(0 < snprintf(filename, 16, "./tests/%d.img", test_counter));
+  test_counter++;
+  return open(filename, O_RDWR|O_CREAT|O_TRUNC, 0666);
 }
 
 // copies the base img (tests/1.img) into a new file at dest_file_name.
