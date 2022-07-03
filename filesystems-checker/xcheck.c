@@ -53,22 +53,17 @@ int main(int argc, char **argv) {
   }
 
 
-  char *bitmap = get_bitmap();
   for (int i = 0; i < NINODES; i++) {
     dinode *ip = get_nth_inode(i);
-    // ERROR: bad direct address in inode.
+    if (ip->type == 0) {
+      continue;
+    }
+     // ERROR: bad direct address in inode.
     for (int j = 0; j < NDIRECT; j++) {
       u32 direct_addr = xint(ip->addrs[j]);
       // since unallocated blocks are 0 and the bitmap is all 1s for the meta blocks, this works
       if ((direct_addr != 0 && direct_addr < DATASTART) || direct_addr >= FSSIZE) {
         fprintf(stderr, "ERROR: bad direct address in inode.\n");
-        exit(1);
-      } else if (!is_nth_bit_1 (bitmap, direct_addr)) {
-        // TODO: I completely forgot to check indirect nodes.
-        // ERROR: address used by inode but marked free in bitmap. 
-        // this one is out of order because I already completed it by accident while
-        // catching "bad direct address in inode"
-        fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
         exit(1);
       }
     }
@@ -76,11 +71,11 @@ int main(int argc, char **argv) {
     // ERROR: bad indirect address in inode.
     u32 indirect_addr = xint(ip->addrs[NDIRECT]);
     if ((indirect_addr != 0 && indirect_addr < DATASTART) || 
-        indirect_addr > FSSIZE || 
-        !is_nth_bit_1(bitmap, indirect_addr)) {
+        indirect_addr > FSSIZE) {
       fprintf(stderr, "ERROR: bad indirect address in inode.\n");
       exit(1);
     }
+    
   }
 
   // ERROR: root directory does not exist.
