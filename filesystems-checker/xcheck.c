@@ -171,25 +171,25 @@ int main(int argc, char **argv) {
     }
   }
 
-  /*for (int i = 0; i < NINODES; i++) {
-    dinode *ip = get_nth_inode(i);
-    if (xshort(ip->type) == 0) {
-      continue;
-    }
-    for (int j = 0; j < NDIRECT + 1; j++) {
-      u32 addr = xint(ip->addrs[j]);
-      set_nth_bit_1(used_bitmap, addr);
-    }
-    u32 indirect_addr = xint(ip->addrs[NDIRECT]);
-    if (indirect_addr != 0) {
-      set_nth_bit_1(used_bitmap, indirect_addr);
-      u32 *indirect_block = file_bytes + indirect_addr * BSIZE;
-      for (int j = 0; j < BSIZE / sizeof(u32); j++) {
-        set_nth_bit_1(used_bitmap, indirect_block[j]);
+  // ERROR: direct address used more than once.
+  for (int i = 0; i < num_direct_addrs - 1; i++) {
+    for (int j = i + 1; j < num_direct_addrs; j++) {
+      if (direct_addrs[i] == direct_addrs[j]) {
+        fprintf(stderr, "ERROR: direct address used more than once.\n");
+        exit(1);
       }
     }
-  }*/
-  
+  }
+
+  // ERROR: indirect address used more than once.
+  for (int i = 0; i < num_indirect_addrs - 1; i++) {
+    for (int j = i + 1; j < num_indirect_addrs; j++) {
+      if (indirect_addrs[i] == indirect_addrs[j]) {
+        fprintf(stderr, "ERROR: indirect address used more than once.\n");
+        exit(1);
+      }
+    }
+  }
 
   assert(0 == munmap(file_bytes, statbuf.st_size));
   return 0;
@@ -210,7 +210,7 @@ bool is_addr_in_bounds(u32 addr) {
 
 void set_nth_bit_0(void *bitmap, int n) {
   assert(n < BSIZE);
-  ((u8 *) bitmap)[n/8] ^= (0x1 << (n%8)); 
+  ((u8 *) bitmap)[n/8] &= ~(0x1 << (n%8)); 
 }
 
 dinode *get_nth_inode(int n) {

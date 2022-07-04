@@ -218,6 +218,7 @@ int main(int argc, char **argv) {
   u16 bad_inode_num;
   char *bad_inode_name;
   u8 bad_bitmap_byte;
+  dinode bad_inode;
 
 
   error = "ERROR: bad inode.\n";
@@ -300,7 +301,7 @@ int main(int argc, char **argv) {
 
 
   error = "ERROR: address used by inode but marked free in bitmap.\n";
-  desc = "4th direct address of letters.txt is marked free\n";
+  desc = "4th indirect address of letters.txt is marked free\n";
   // 4th indirect address of letters.txt is 0x5D, which is bit 5 of byte 11 in the bitmap
   offset = BMAPSTART * BSIZE + 11;
   bad_bitmap_byte = 0b11111011;
@@ -316,12 +317,25 @@ int main(int argc, char **argv) {
   bad_bitmap_byte = 0b11110111;
   make_test_file(false, desc, error, offset, &bad_bitmap_byte, sizeof(u8));
 
+
   error = "ERROR: bitmap marks block in use but it is not in use.\n";
-  desc = "byte 14 of bitmap is 0b10000000, marking free address 104 (0x68) as in use \n";
+  desc = "Byte 14 of bitmap is 0b10000000, marking free address 104 (0x68) as in use \n";
   offset = BMAPSTART * BSIZE + 14;
   bad_bitmap_byte = 0b10000000;
   make_test_file(false, desc, error, offset, &bad_bitmap_byte, sizeof(u8));
 
+  
+  error = "ERROR: direct address used more than once.\n";
+  desc = "Address 59 is used more than once\n";
+  offset = INODESTART * BSIZE + 4 * sizeof(dinode); 
+  bad_inode = (dinode) {
+      xshort(T_FILE),     // type
+      0, 0,               // major and minor (not relevant)
+      xshort(1),          // nlink
+      xint(BSIZE),        // size (since root dir is one block)
+      { xint(DATASTART) } // addrs (same as root dir, but a file)
+  };
+  make_test_file(false, desc, error, offset, &bad_inode, sizeof(dinode));
   
 
   assert(0 == close(fsfd));
