@@ -73,11 +73,6 @@ int main(int argc, char **argv) {
   }
   assert(INODESTART * BSIZE == byte_index);
 
-  /*// write the inodes in batches of 8 (since there are 8 inodes per block)
-  assert(33 * BSIZE == write_bytes(inodes, BSIZE));
-  assert(34 * BSIZE == write_bytes(inodes + 8, BSIZE));
-  assert(35 * BSIZE == write_bytes(inodes + 16, 4 * sizeof(dinode)));*/
-
   // write in an empty inode and our three inodes
   dinode inodes[4] = { 
     // empty inode
@@ -217,114 +212,74 @@ int main(int argc, char **argv) {
   // It's time to make some copies and edit them to make the other tests.
   char *error;
   int offset;
+  u16 bad_inode_type;
+  u32 bad_inode_addr;
+  u16 bad_inode_num;
+
 
   error = "ERROR: bad inode.\n";
   // file byte offset for the 3rd inode struct (for hex.txt)
   offset = INODESTART * BSIZE + 3 * sizeof(dinode);
-  u16 bad_inode_type = 0xAAAA;
+  bad_inode_type = 0xAAAA;
   make_test_file(false, error, offset, &bad_inode_type, sizeof(u16));
 
+
   error = "ERROR: bad direct address in inode.\n";
-  u32 bad_inode_addr;
   // Direct address points to bitmap block
   // first direct address of root
   offset = INODESTART * BSIZE + sizeof(dinode) + offsetof(dinode, addrs); 
-  bad_inode_addr = BMAPSTART; 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u16));
+  bad_inode_addr = xint(BMAPSTART); 
+  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
   // Direct address points to block >= 1000 (out of 999)
   // 4th direct address of letters.txt
   offset = INODESTART * BSIZE + 3 * sizeof(dinode) + offsetof(dinode, addrs) + 3 * sizeof(u32);
-  bad_inode_addr = 1000; 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u16));
+  bad_inode_addr = xint(FSSIZE); 
+  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
   // Direct address of unused inode points to block >= 1000 (out of 999)
   // 4th direct address of random inode 
   offset = INODESTART * BSIZE + 20 * sizeof(dinode) + offsetof(dinode, addrs) + 3 * sizeof(u32);
+  bad_inode_addr = xint(0x00ABCDEF); 
+  make_test_file(true, "", offset, &bad_inode_addr, sizeof(u32));
+
+
+  error = "ERROR: bad indirect address in inode.\n";
+  // address to indirect block points to bitmap block
+  // address to indirect block of hex.txt
+  offset = INODESTART * BSIZE + 2 * sizeof(dinode) + offsetof(dinode, addrs) + NDIRECT * sizeof(u32); 
+  bad_inode_addr = xint(BMAPSTART); 
+  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
+  // address to indirect block points to out-of-bounds address 1000
+  // address to indirect block of hex.txt
+  offset = INODESTART * BSIZE + 2 * sizeof(dinode) + offsetof(dinode, addrs) + NDIRECT * sizeof(u32); 
+  bad_inode_addr = xint(FSSIZE); 
+  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
+  // Direct address of unused inode points to block >= 1000 (out of 999)
+  // address to indirect block of random inode 
+  offset = INODESTART * BSIZE + 20 * sizeof(dinode) + offsetof(dinode, addrs) + NDIRECT * sizeof(u32);
   bad_inode_addr = 0x00ABCDEF; 
-  make_test_file(true, "", offset, &bad_inode_addr, sizeof(u16));
+  make_test_file(true, "", offset, &bad_inode_addr, sizeof(u32));
+  // address in indirect block points to bitmap block
+  // 4th address in indirect block of hex.txt
+  offset = (DATASTART + 30) * BSIZE + 2 * sizeof(u32); 
+  bad_inode_addr = xint(BMAPSTART); 
+  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
+  // address in indirect block points to out-of-bounds block
+  // 4th address in indirect block of hex.txt
+  offset = (DATASTART + 30) * BSIZE + 2 * sizeof(u32); 
+  bad_inode_addr = xint(FSSIZE); 
+  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
 
-  /*error = "ERROR: bad indirect address in inode.\n";
-  // TEST 6: bad direct address in inode (in meta block)
-  test_fd = copy_base_img("./tests/6.img");
-  // This is where the 2nd direct address of the root inode is stored
-  assert(root_addr_offset == lseek(test_fd, root_addr_offset, 0));
-  bad_inode_addr = 2; // out of a possible 999
-  assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
-  assert(0 == close(test_fd));
 
-  // TEST 7: bad direct address in inode (> 1000)
-  test_fd = copy_base_img("./tests/7.img");
-  // This is where the 2nd direct address of the root inode is stored
-  assert(root_addr_offset == lseek(test_fd, root_addr_offset, 0));
-  bad_inode_addr = 1000; // out of a possible 999
-  assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
-  assert(0 == close(test_fd));
+  error = "ERROR: root directory does not exist.\n";
+  // set root inode's type to 0
+  offset = INODESTART * BSIZE + sizeof(dinode) + offsetof(dinode, type); 
+  bad_inode_type = 0; 
+  make_test_file(false, error, offset, &bad_inode_type, sizeof(u16));
+  // set root inode's parent to something other than itself.
+  offset = DATASTART * BSIZE + sizeof(dirent) + offsetof(dirent, inum);
+  bad_inode_num = xshort(2); 
+  make_test_file(false, error, offset, &bad_inode_num, sizeof(u16));
 
-  // TEST 8: address used by inode but marked free in bitmap.
-  // This one is out of order because I accidentally completed it as part of "bad direct address in inode"
-  test_fd = copy_base_img("./tests/8.img");
-  // This is where the 2nd direct address of the root inode is stored
-  int root_indirect_addr_offset = INODESTART * BSIZE + sizeof(dinode) 
-                                + 4 * sizeof(u16) 
-                                + sizeof(u32)
-                                + (NDIRECT * sizeof(u32)); 
-  assert(root_indirect_addr_offset == lseek(test_fd, root_indirect_addr_offset, 0));
-  bad_inode_addr = 500; // out of a possible 999
-  assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
-  assert(0 == close(test_fd));
-
-  // TEST 9: bad indirect address in inode (in meta block)
-  test_fd = copy_base_img("./tests/9.img");
-  // This is where the 2nd direct address of the root inode is stored
-  root_indirect_addr_offset = INODESTART * BSIZE + sizeof(dinode) 
-                                + 4 * sizeof(u16) 
-                                + sizeof(u32)
-                                + (NDIRECT * sizeof(u32)); 
-  assert(root_indirect_addr_offset == lseek(test_fd, root_indirect_addr_offset, 0));
-  bad_inode_addr = 2; // out of a possible 999
-  assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
-  assert(0 == close(test_fd));
-
-  // TEST 10: bad indirect address in inode (> 1000)
-  test_fd = copy_base_img("./tests/10.img");
-  // This is where the 2nd direct address of the root inode is stored
-  root_indirect_addr_offset = INODESTART * BSIZE + sizeof(dinode) 
-                                + 4 * sizeof(u16) 
-                                + sizeof(u32)
-                                + (NDIRECT * sizeof(u32)); 
-  assert(root_indirect_addr_offset == lseek(test_fd, root_indirect_addr_offset, 0));
-  bad_inode_addr = 1000; // out of a possible 999
-  assert(4 == write(test_fd, (void *) (&bad_inode_addr), 4));
-  assert(0 == close(test_fd));
-
-  // TEST 11: root directory does not exist (parent links to wrong inode number)
-  test_fd = copy_base_img("./tests/11.img");
-  int root_parent_dirent_offset = DATASTART * BSIZE + sizeof(dirent);
-  assert(root_parent_dirent_offset == lseek(test_fd, root_parent_dirent_offset, 0));
-  u16 bad_inode_num = 0xAAAA; // should be 1 in proper filesystem
-  assert(2 == write(test_fd, (void *) (&bad_inode_num), 2));
-  assert(0 == close(test_fd));
-  
-  // TEST 12: directory not properly formatted
-  test_fd = copy_base_img("./tests/12.img");
-  int root_parent_name_offset = DATASTART * BSIZE + sizeof(dirent) + sizeof(u16);
-  assert(root_parent_name_offset == lseek(test_fd, root_parent_name_offset, 0));
-  char *bad_inode_name = "...";
-  assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
-  assert(0 == close(test_fd));*/
-
-  // TEST 13: bitmap marks block in use but it is not in use
-  /*test_fd = copy_base_img("./tests/13.img");
-  int root_parent_name_offset = DATASTART * BSIZE + sizeof(dirent) + sizeof(u16);
-  assert(root_parent_name_offset == lseek(test_fd, root_parent_name_offset, 0));
-  char *bad_inode_name = "...";
-  assert(3 == write(test_fd, (void *) (bad_inode_name), 3));
-  assert(0 == close(test_fd));*/
-  // TEST 11: direct address used more than once
-  // TEST 12: indirect address used more than once
-  // TEST 13: inode marked use but not found in a directory
-  // TEST 14: inode referred to in directory but marked free
-  // TEST 15: bad reference count for file
-  // TEST 16: directory appears more than once in file system
   
 
   assert(0 == close(fsfd));

@@ -16,6 +16,7 @@ dirent *get_nth_dirent(dinode *dinode_p, int n);
 char *get_bitmap();
 
 bool is_nth_bit_1(void *bitmap, int n);
+bool is_addr_in_bounds(u32 addr);
 
 void *file_bytes;
 
@@ -55,14 +56,14 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < NINODES; i++) {
     dinode *ip = get_nth_inode(i);
-    if (ip->type == 0) {
+    if (xshort(ip->type) == 0) {
       continue;
     }
      // ERROR: bad direct address in inode.
     for (int j = 0; j < NDIRECT; j++) {
       u32 direct_addr = xint(ip->addrs[j]);
       // since unallocated blocks are 0 and the bitmap is all 1s for the meta blocks, this works
-      if ((direct_addr != 0 && direct_addr < DATASTART) || direct_addr >= FSSIZE) {
+      if (!is_addr_in_bounds(direct_addr)) {
         fprintf(stderr, "ERROR: bad direct address in inode.\n");
         exit(1);
       }
@@ -70,16 +71,27 @@ int main(int argc, char **argv) {
 
     // ERROR: bad indirect address in inode.
     u32 indirect_addr = xint(ip->addrs[NDIRECT]);
-    if ((indirect_addr != 0 && indirect_addr < DATASTART) || 
-        indirect_addr > FSSIZE) {
-      fprintf(stderr, "ERROR: bad indirect address in inode.\n");
-      exit(1);
+    if (indirect_addr != 0) {
+      if (!is_addr_in_bounds(indirect_addr)) {
+        fprintf(stderr, "ERROR: bad indirect address in inode.\n");
+        exit(1);
+      }
+      u32 *indirect_block = file_bytes + indirect_addr * BSIZE;
+      for (int j = 0; j < BSIZE / sizeof(u32); j++) {
+        if (!is_addr_in_bounds(indirect_block[j])) {
+          fprintf(stderr, "ERROR: bad indirect address in inode.\n");
+          exit(1);
+        }
+      }
     }
-    
   }
 
   // ERROR: root directory does not exist.
   dinode *root_ip = get_nth_inode(1);
+  if (xshort(root_ip->type) != T_DIR) {
+    fprintf(stderr, "ERROR: root directory does not exist.\n");
+    exit(1);
+  }
   dirent *root_self_dirent = get_nth_dirent(root_ip, 0);
   dirent *root_parent_dirent = root_self_dirent + 1;
   u16 root_self_inum = xshort(root_self_dirent->inum);
@@ -137,6 +149,10 @@ char *get_bitmap() {
 bool is_nth_bit_1(void *bitmap, int n) {
   u8 byte = ((u8 *) bitmap)[n/8];
   return ((byte & (0x1 << (n%8))) > 0);
+}
+
+bool is_addr_in_bounds(u32 addr) {
+  return addr == 0 || (addr >= DATASTART && addr < FSSIZE);
 }
 
 void set_nth_bit_1(void *bitmap, int n) {
