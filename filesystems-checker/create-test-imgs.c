@@ -26,7 +26,7 @@
 
 int open_test_file();
 void copy_base_img(int dest_fd);
-void make_test_file(bool should_succeed, char *error, int offset, void *new_bytes, size_t new_bytes_len);
+void make_test_file(bool should_succeed, char *desc, char *error, int offset, void *new_bytes, size_t new_bytes_len);
 
 int write_block_or_die(char buf[BSIZE], char *message);
 int write_bytes(void *bytes, size_t size);
@@ -211,6 +211,7 @@ int main(int argc, char **argv) {
   // Now that we're done making the base case disk image (tests/3.img),
   // It's time to make some copies and edit them to make the other tests.
   char *error;
+  char *desc;
   int offset;
   u16 bad_inode_type;
   u32 bad_inode_addr;
@@ -218,67 +219,71 @@ int main(int argc, char **argv) {
 
 
   error = "ERROR: bad inode.\n";
+  desc = "Root inode has type = 0xAAAA\n";
   // file byte offset for the 3rd inode struct (for hex.txt)
   offset = INODESTART * BSIZE + 3 * sizeof(dinode);
   bad_inode_type = 0xAAAA;
-  make_test_file(false, error, offset, &bad_inode_type, sizeof(u16));
+  make_test_file(false, desc, error, offset, &bad_inode_type, sizeof(u16));
 
 
   error = "ERROR: bad direct address in inode.\n";
-  // Direct address points to bitmap block
+  desc = "First direct address of root is BMAPSTART\n";
   // first direct address of root
   offset = INODESTART * BSIZE + sizeof(dinode) + offsetof(dinode, addrs); 
   bad_inode_addr = xint(BMAPSTART); 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
-  // Direct address points to block >= 1000 (out of 999)
+  make_test_file(false, desc, error, offset, &bad_inode_addr, sizeof(u32));
+  desc = "4th direct address of letters.txt inode is 1000 (out of 999)\n";
   // 4th direct address of letters.txt
   offset = INODESTART * BSIZE + 3 * sizeof(dinode) + offsetof(dinode, addrs) + 3 * sizeof(u32);
   bad_inode_addr = xint(FSSIZE); 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
-  // Direct address of unused inode points to block >= 1000 (out of 999)
+  make_test_file(false, desc, error, offset, &bad_inode_addr, sizeof(u32));
+  //
+  desc = "4th direct address of unused inode is 0xABCDEF\n";
   // 4th direct address of random inode 
   offset = INODESTART * BSIZE + 20 * sizeof(dinode) + offsetof(dinode, addrs) + 3 * sizeof(u32);
   bad_inode_addr = xint(0x00ABCDEF); 
-  make_test_file(true, "", offset, &bad_inode_addr, sizeof(u32));
+  make_test_file(true, desc, "", offset, &bad_inode_addr, sizeof(u32));
 
 
   error = "ERROR: bad indirect address in inode.\n";
-  // address to indirect block points to bitmap block
+  desc = "Address to indirect block of hex.txt is BMAPSTART\n";
   // address to indirect block of hex.txt
   offset = INODESTART * BSIZE + 2 * sizeof(dinode) + offsetof(dinode, addrs) + NDIRECT * sizeof(u32); 
   bad_inode_addr = xint(BMAPSTART); 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
-  // address to indirect block points to out-of-bounds address 1000
+  make_test_file(false, desc, error, offset, &bad_inode_addr, sizeof(u32));
+  desc = "Address to indirect block of hext.txt is 1000\n";
   // address to indirect block of hex.txt
   offset = INODESTART * BSIZE + 2 * sizeof(dinode) + offsetof(dinode, addrs) + NDIRECT * sizeof(u32); 
   bad_inode_addr = xint(FSSIZE); 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
-  // Direct address of unused inode points to block >= 1000 (out of 999)
+  make_test_file(false, desc, error, offset, &bad_inode_addr, sizeof(u32));
+  desc = "Indirect address of unused inode is 0xABCDEF\n";
   // address to indirect block of random inode 
   offset = INODESTART * BSIZE + 20 * sizeof(dinode) + offsetof(dinode, addrs) + NDIRECT * sizeof(u32);
-  bad_inode_addr = 0x00ABCDEF; 
-  make_test_file(true, "", offset, &bad_inode_addr, sizeof(u32));
-  // address in indirect block points to bitmap block
+  bad_inode_addr = xint(0x00ABCDEF); 
+  make_test_file(true, desc, "", offset, &bad_inode_addr, sizeof(u32));
+  desc = "Address in indirect block is BMAPSTART\n";
   // 4th address in indirect block of hex.txt
   offset = (DATASTART + 30) * BSIZE + 2 * sizeof(u32); 
   bad_inode_addr = xint(BMAPSTART); 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
-  // address in indirect block points to out-of-bounds block
+  make_test_file(false, desc, error, offset, &bad_inode_addr, sizeof(u32));
+  desc = "4th address in indirect block of hex.txt is 1000\n";
   // 4th address in indirect block of hex.txt
   offset = (DATASTART + 30) * BSIZE + 2 * sizeof(u32); 
   bad_inode_addr = xint(FSSIZE); 
-  make_test_file(false, error, offset, &bad_inode_addr, sizeof(u32));
+  make_test_file(false, desc, error, offset, &bad_inode_addr, sizeof(u32));
 
 
   error = "ERROR: root directory does not exist.\n";
+  desc = "Root inode has type 0 (unallocated)\n";
   // set root inode's type to 0
   offset = INODESTART * BSIZE + sizeof(dinode) + offsetof(dinode, type); 
   bad_inode_type = 0; 
-  make_test_file(false, error, offset, &bad_inode_type, sizeof(u16));
+  make_test_file(false, desc, error, offset, &bad_inode_type, sizeof(u16));
+  desc = "Root inode has parent inode number set to 2\n";
   // set root inode's parent to something other than itself.
   offset = DATASTART * BSIZE + sizeof(dirent) + offsetof(dirent, inum);
   bad_inode_num = xshort(2); 
-  make_test_file(false, error, offset, &bad_inode_num, sizeof(u16));
+  make_test_file(false, desc, error, offset, &bad_inode_num, sizeof(u16));
 
   
 
@@ -380,8 +385,13 @@ void make_file_with(char *filename, char *filedata) {
   assert(0 == close(fd));
 }
 
-void make_test_file(bool should_succeed, char *error, int offset, void *new_bytes, size_t new_bytes_len) {
+void make_test_file(bool should_succeed, char *desc, char *error, 
+    int offset, void *new_bytes, size_t new_bytes_len) {
   char filename[16];
+  // make the test #.desc file
+  assert(0 < snprintf(filename, sizeof(filename), "./tests/%d.desc", test_counter));
+  make_file_with(filename, desc);
+
   // make the test #.run file
   assert(0 < snprintf(filename, sizeof(filename), "./tests/%d.run", test_counter));
   char run_data[32];
