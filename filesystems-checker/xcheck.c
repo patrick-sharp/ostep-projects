@@ -121,8 +121,35 @@ int main(int argc, char **argv) {
     }
   }
 
+  // ERROR: address used by inode but marked free in bitmap.
+  char *bitmap = file_bytes + BMAPSTART * BSIZE;
+  for (int i = 0; i < NINODES; i++) {
+    dinode *ip = get_nth_inode(i);
+    if (xshort(ip->type) == 0) {
+      continue;
+    }
+    for (int j = 0; j < NDIRECT; j++) {
+      u32 direct_addr = xint(ip->addrs[j]);
+      if (!is_nth_bit_1(bitmap, direct_addr)) {
+        fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
+        exit(1);
+      }
+    }
+
+    u32 indirect_addr = xint(ip->addrs[NDIRECT]);
+    if (indirect_addr != 0) {
+      u32 *indirect_block = file_bytes + indirect_addr * BSIZE;
+      for (int j = 0; j < BSIZE / sizeof(u32); j++) {
+        if (!is_nth_bit_1(bitmap, indirect_block[j])) {
+          fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
+          exit(1);
+        }
+      }
+    }
+  }
+
   // ERROR: bitmap marks block in use but it is not in use.
-  // NMETA = 59, so bitmap is 0xFFFFFFFF FFFFFF07
+  // NMETA = 59, so bitmap with no allocated nodes is 0xFFFFFFFF FFFFFF07
   // 59 meta blocks + 1 root block + 16 file blocks = 76
   u8 used_bitmap [BSIZE / 8];
   for (int i = 0; i < NMETA / 8; i++) {

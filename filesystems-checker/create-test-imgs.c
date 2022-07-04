@@ -216,6 +216,8 @@ int main(int argc, char **argv) {
   u16 bad_inode_type;
   u32 bad_inode_addr;
   u16 bad_inode_num;
+  char *bad_inode_name;
+  u8 bad_bitmap_byte;
 
 
   error = "ERROR: bad inode.\n";
@@ -284,6 +286,37 @@ int main(int argc, char **argv) {
   offset = DATASTART * BSIZE + sizeof(dirent) + offsetof(dirent, inum);
   bad_inode_num = xshort(2); 
   make_test_file(false, desc, error, offset, &bad_inode_num, sizeof(u16));
+
+
+  error = "ERROR: directory not properly formatted.\n";
+  desc = "Root directory contains no \".\" entry";
+  offset = DATASTART * BSIZE + offsetof(dirent, name);
+  bad_inode_name = "bad inode name";
+  make_test_file(false, desc, error, offset, &bad_inode_name, strlen(bad_inode_name));
+  desc = "Root directory's \".\" entry has inode number set to 2";
+  offset = DATASTART * BSIZE + offsetof(dirent, name);
+  bad_inode_num = 2;
+  make_test_file(false, desc, error, offset, &bad_inode_num, sizeof(u16));
+
+
+  error = "ERROR: address used by inode but marked free in bitmap.\n";
+  desc = "4th direct address of letters.txt is marked free\n";
+  // 4th indirect address of letters.txt is 0x5D, which is bit 5 of byte 11 in the bitmap
+  offset = BMAPSTART * BSIZE + 11;
+  bad_bitmap_byte = 0b11111011;
+  make_test_file(false, desc, error, offset, &bad_bitmap_byte, sizeof(u8));
+  desc = "Address to indirect block of hex.txt is marked free\n";
+  // Address to indirect block of hex.txt is 0x48, which is bit 0 of byte 9 in the bitmap
+  offset = BMAPSTART * BSIZE + 9;
+  bad_bitmap_byte = 0b01111111;
+  make_test_file(false, desc, error, offset, &bad_bitmap_byte, sizeof(u8));
+  desc = "4th indirect address of hex.txt is marked free\n";
+  // 4th indirect address of hex.txt is 0x4C, which is bit 4 of byte 9 in the bitmap
+  offset = BMAPSTART * BSIZE + 9;
+  bad_bitmap_byte = 0b11110111;
+  make_test_file(false, desc, error, offset, &bad_bitmap_byte, sizeof(u8));
+
+  error = "ERROR: bitmap marks block in use but it is not in use.\n";
 
   
 
