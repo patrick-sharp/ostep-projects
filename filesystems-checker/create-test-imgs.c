@@ -317,6 +317,10 @@ int main(int argc, char **argv) {
   make_test_file(false, desc, error, offset, &bad_bitmap_byte, sizeof(u8));
 
   error = "ERROR: bitmap marks block in use but it is not in use.\n";
+  desc = "byte 14 of bitmap is 0b10000000, marking free address 104 (0x68) as in use \n";
+  offset = BMAPSTART * BSIZE + 14;
+  bad_bitmap_byte = 0b10000000;
+  make_test_file(false, desc, error, offset, &bad_bitmap_byte, sizeof(u8));
 
   
 

@@ -16,6 +16,7 @@ dirent *get_nth_dirent(dinode *dinode_p, int n);
 char *get_bitmap();
 
 bool is_nth_bit_1(void *bitmap, int n);
+void set_nth_bit_0(void *bitmap, int n);
 bool is_addr_in_bounds(u32 addr);
 
 void *file_bytes;
@@ -53,36 +54,50 @@ int main(int argc, char **argv) {
     }
   }
 
+  int num_direct_addrs = 0;
+  u32 direct_addrs[FSSIZE];
+  int num_indirect_addrs = 0;
+  u32 indirect_addrs[FSSIZE];
 
+  // list out all the direct and indirect addresses
   for (int i = 0; i < NINODES; i++) {
     dinode *ip = get_nth_inode(i);
     if (xshort(ip->type) == 0) {
       continue;
     }
-     // ERROR: bad direct address in inode.
     for (int j = 0; j < NDIRECT; j++) {
       u32 direct_addr = xint(ip->addrs[j]);
-      // since unallocated blocks are 0 and the bitmap is all 1s for the meta blocks, this works
-      if (!is_addr_in_bounds(direct_addr)) {
-        fprintf(stderr, "ERROR: bad direct address in inode.\n");
-        exit(1);
+      if (direct_addr != 0) {
+        direct_addrs[num_direct_addrs++] = direct_addr;
       }
     }
 
-    // ERROR: bad indirect address in inode.
-    u32 indirect_addr = xint(ip->addrs[NDIRECT]);
-    if (indirect_addr != 0) {
-      if (!is_addr_in_bounds(indirect_addr)) {
-        fprintf(stderr, "ERROR: bad indirect address in inode.\n");
-        exit(1);
-      }
-      u32 *indirect_block = file_bytes + indirect_addr * BSIZE;
+    u32 indirect_block_addr = xint(ip->addrs[NDIRECT]);
+    indirect_addrs[num_indirect_addrs++] = indirect_block_addr;
+    if (is_addr_in_bounds(indirect_block_addr)) {
+      u32 *indirect_block = file_bytes + indirect_block_addr * BSIZE;
       for (int j = 0; j < BSIZE / sizeof(u32); j++) {
-        if (!is_addr_in_bounds(indirect_block[j])) {
-          fprintf(stderr, "ERROR: bad indirect address in inode.\n");
-          exit(1);
+        u32 indirect_addr = xint(indirect_block[j]);
+        if (indirect_addr != 0) {
+          indirect_addrs[num_indirect_addrs++] = indirect_addr;
         }
       }
+    }
+  }
+
+  // ERROR: bad direct address in inode.
+  for (int i = 0; i < num_direct_addrs; i++) {
+    if (!is_addr_in_bounds(direct_addrs[i])) {
+      fprintf(stderr, "ERROR: bad direct address in inode.\n");
+      exit(1);
+    }
+  }
+
+  // ERROR: bad indirect address in inode.
+  for (int i = 0; i < num_indirect_addrs; i++) {
+    if (!is_addr_in_bounds(indirect_addrs[i])) {
+      fprintf(stderr, "ERROR: bad indirect address in inode.\n");
+      exit(1);
     }
   }
 
@@ -123,46 +138,57 @@ int main(int argc, char **argv) {
 
   // ERROR: address used by inode but marked free in bitmap.
   char *bitmap = file_bytes + BMAPSTART * BSIZE;
-  for (int i = 0; i < NINODES; i++) {
-    dinode *ip = get_nth_inode(i);
-    if (xshort(ip->type) == 0) {
-      continue;
+  for (int i = 0; i < num_direct_addrs; i++) {
+    if (!is_nth_bit_1(bitmap, direct_addrs[i])) {
+      fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
+      exit(1);
     }
-    for (int j = 0; j < NDIRECT; j++) {
-      u32 direct_addr = xint(ip->addrs[j]);
-      if (!is_nth_bit_1(bitmap, direct_addr)) {
-        fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
-        exit(1);
-      }
-    }
-
-    u32 indirect_addr = xint(ip->addrs[NDIRECT]);
-    if (indirect_addr != 0) {
-      u32 *indirect_block = file_bytes + indirect_addr * BSIZE;
-      for (int j = 0; j < BSIZE / sizeof(u32); j++) {
-        if (!is_nth_bit_1(bitmap, indirect_block[j])) {
-          fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
-          exit(1);
-        }
-      }
+  }
+  for (int i = 0; i < num_indirect_addrs; i++) {
+    if (!is_nth_bit_1(bitmap, indirect_addrs[i])) {
+      fprintf(stderr, "ERROR: address used by inode but marked free in bitmap.\n");
+      exit(1);
     }
   }
 
   // ERROR: bitmap marks block in use but it is not in use.
-  // NMETA = 59, so bitmap with no allocated nodes is 0xFFFFFFFF FFFFFF07
-  // 59 meta blocks + 1 root block + 16 file blocks = 76
   u8 used_bitmap [BSIZE / 8];
-  for (int i = 0; i < NMETA / 8; i++) {
-    used_bitmap[i] = 0xFF;
+  memcpy(used_bitmap, bitmap, BSIZE / 8);
+  for (int i = 0; i < num_direct_addrs; i++) {
+    set_nth_bit_0(used_bitmap, direct_addrs[i]);
   }
-  used_bitmap[NMETA/8] = 0x07;
-  for (int i = 0; i < NINODES; i++) {
-    //inode *ip = get_nth_inode(i);
-    for (int j = 0; j < NDIRECT + 1; j++) {
-      //u32 addr = xint(ip->addrs[j]);
+  for (int i = 0; i < num_indirect_addrs; i++) {
+    set_nth_bit_0(used_bitmap, indirect_addrs[i]);
+  }
+  if (used_bitmap[7] != 0x07) {
+     fprintf(stderr, "ERROR: bitmap marks block in use but it is not in use.\n");
+     exit(1);
+  }
+  for (int i = 8; i < BSIZE / 8; i++) {
+    if (used_bitmap[i] != 0) {
+       fprintf(stderr, "ERROR: bitmap marks block in use but it is not in use.\n");
+       exit(1);
     }
-    //u32 ind_addr = xint(ip->addrs[NDIRECT]);
   }
+
+  /*for (int i = 0; i < NINODES; i++) {
+    dinode *ip = get_nth_inode(i);
+    if (xshort(ip->type) == 0) {
+      continue;
+    }
+    for (int j = 0; j < NDIRECT + 1; j++) {
+      u32 addr = xint(ip->addrs[j]);
+      set_nth_bit_1(used_bitmap, addr);
+    }
+    u32 indirect_addr = xint(ip->addrs[NDIRECT]);
+    if (indirect_addr != 0) {
+      set_nth_bit_1(used_bitmap, indirect_addr);
+      u32 *indirect_block = file_bytes + indirect_addr * BSIZE;
+      for (int j = 0; j < BSIZE / sizeof(u32); j++) {
+        set_nth_bit_1(used_bitmap, indirect_block[j]);
+      }
+    }
+  }*/
   
 
   assert(0 == munmap(file_bytes, statbuf.st_size));
@@ -182,9 +208,9 @@ bool is_addr_in_bounds(u32 addr) {
   return addr == 0 || (addr >= DATASTART && addr < FSSIZE);
 }
 
-void set_nth_bit_1(void *bitmap, int n) {
-  //u8 byte = ((u8 *) bitmap)[n/8];
-  ((u8 *) bitmap)[n/8] |= (0x1 << (n%8)); 
+void set_nth_bit_0(void *bitmap, int n) {
+  assert(n < BSIZE);
+  ((u8 *) bitmap)[n/8] ^= (0x1 << (n%8)); 
 }
 
 dinode *get_nth_inode(int n) {
