@@ -369,6 +369,21 @@ int main(int argc, char **argv) {
   make_test_file(false, desc, error, offset, &bad_inode_pair, sizeof(bad_inode_pair));
 
 
+  error = "ERROR: bad reference count for file.\n";
+  desc = "letters.txt has nlink set to 2\n";
+  offset = INODESTART * BSIZE + 3 * sizeof(dinode);
+  bad_inode = inodes[3];
+  bad_inode.nlink = xshort(2);
+  make_test_file(false, desc, error, offset, &bad_inode, sizeof(dinode));
+
+  
+  error = "ERROR: directory appears more than once in file system.\n";
+  desc = "root directory has nlink set to 2\n";
+  offset = INODESTART * BSIZE + sizeof(dinode);
+  bad_inode = inodes[1];
+  bad_inode.nlink = xshort(2);
+  make_test_file(false, desc, error, offset, &bad_inode, sizeof(dinode));
+
   assert(0 == close(fsfd));
   return 0;
 }
@@ -458,7 +473,6 @@ void copy_base_img(int dest_fd) {
 }
 
 void make_file_with(char *filename, char *filedata) {
-  //printf("%d %s %s\n", test_counter, filename, filedata);
   int fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0666);
   assert(-1 < fd);
   int len = strlen(filedata);

@@ -60,22 +60,25 @@ int main(int argc, char **argv) {
   int num_indirect_addrs = 0;
   u32 indirect_addrs[FSSIZE];
   u8 used_inodes_bitmap[NINODES / 8] = { 0 };
-  u8 referenced_inodes_bitmap[NINODES / 8] = { 0 };
+  u8 inode_references[NINODES] = { 0 };
 
   // list out all the direct and indirect addresses
   // list out all the inode numbers in directories
   // list out all the inode numbers whose type != 0
+  inode_references[1]++; // make sure the root directory counts as referenced
   for (int i = 0; i < NINODES; i++) {
     dinode *ip = get_nth_inode(i);
     u16 type = xshort(ip->type);
     if (type == 0) {
       continue;
     } else if (type == T_DIR) {
-      for (int j = 0; j < BSIZE / sizeof(dirent); j++) {
+      for (int j = 2; j < BSIZE / sizeof(dirent); j++) {
+        // we start at 2 because the first two entries of a dirent
+        // are "." and ".."
         dirent *de = get_nth_dirent(ip, j);
         u16 inum = xshort(de->inum);
         if (inum != 0) {
-          set_nth_bit_1(referenced_inodes_bitmap, inum);
+          inode_references[inum]++;
         }
       }
     }
@@ -101,10 +104,6 @@ int main(int argc, char **argv) {
       }
     }
   }
-
-  /*for (int i = 0; i < num_indirect_addrs; i++) {
-    printf("%i\n", indirect_addrs[i]);
-  }*/
 
   // ERROR: bad direct address in inode.
   for (int i = 0; i < num_direct_addrs; i++) {
@@ -224,12 +223,31 @@ int main(int argc, char **argv) {
   // ERROR: inode referred to in directory but marked free.
   for (int i = 0; i < NINODES; i++) {
     bool nth_inode_used = is_nth_bit_1(used_inodes_bitmap, i);
-    bool nth_inode_referenced = is_nth_bit_1(referenced_inodes_bitmap, i);
+    bool nth_inode_referenced = inode_references[i] > 0;
     if (nth_inode_used && !nth_inode_referenced) {
       fprintf(stderr, "ERROR: inode marked use but not found in a directory.\n");
       exit(1);
     } else if (!nth_inode_used && nth_inode_referenced) {
       fprintf(stderr, "ERROR: inode referred to in directory but marked free.\n");
+      exit(1);
+    }
+  }
+
+  // ERROR: bad reference count for file.
+  for (int i = 0; i < NINODES; i++) {
+    dinode *ip = get_nth_inode(i);
+    if (xshort(ip->type) == T_FILE && xshort(ip->nlink) != inode_references[i]) {
+      fprintf(stderr, "ERROR: bad reference count for file.\n");
+      exit(1);
+    }
+  }
+
+  // ERROR: directory appears more than once in file system.
+  for (int i = 0; i < NINODES; i++) {
+    dinode *ip = get_nth_inode(i);
+    if (xshort(ip->type) == T_DIR && 
+        (xshort(ip->nlink) > 1 || inode_references[i] > 1)) { 
+      fprintf(stderr, "ERROR: directory appears more than once in file system.\n");
       exit(1);
     }
   }
@@ -256,7 +274,6 @@ void set_nth_bit_0(void *bitmap, int n) {
 }
 
 void set_nth_bit_1(void *bitmap, int n) {
-  //printf("%i\n", n);
   ((u8 *) bitmap)[n/8] |= (0x1 << (n%8)); 
 }
 
