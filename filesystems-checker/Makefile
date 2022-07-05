@@ -1,13 +1,13 @@
-all: xcheck create-test-imgs
+all: xcheck create-tests
 
-create-test-imgs: create-test-imgs.c
-	gcc -o create-test-imgs create-test-imgs.c -Wall -Werror -O
+create-tests: create-tests.c
+	gcc -o create-tests create-tests.c -Wall -Werror -O
 
 xcheck: xcheck.c
 	gcc -o xcheck xcheck.c -Wall -Werror -O
 
 clean:
-	rm xcheck create-test-imgs tests/*.img tests-out/* && rmdir tests-out
+	rm xcheck create-tests tests/*.img tests-out/* && rmdir tests-out
 
 test:
-	make && ./create-test-imgs && ./test-xcheck.sh
+	make && ./create-tests && ./test-xcheck.sh
