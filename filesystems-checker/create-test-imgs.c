@@ -219,6 +219,7 @@ int main(int argc, char **argv) {
   char *bad_inode_name;
   u8 bad_bitmap_byte;
   dinode bad_inode;
+  dirent bad_dirent;
 
 
   error = "ERROR: bad inode.\n";
@@ -350,6 +351,23 @@ int main(int argc, char **argv) {
   bad_inode.addrs[NDIRECT] = xint(0x59);
   make_test_file(false, desc, error, offset, &bad_inode, sizeof(dinode));
   
+
+  error = "ERROR: inode marked use but not found in a directory.\n";
+  desc = "hex.txt is deleted from the root directory, but still exists as a used inode\n";
+  offset = DATASTART * BSIZE + 2 * sizeof(dirent);
+  bad_dirent = (dirent) {};
+  make_test_file(false, desc, error, offset, &bad_dirent, sizeof(dirent));
+
+
+  error = "ERROR: inode referred to in directory but marked free.\n";
+  desc = "letters.txt is moved from inode 3 to inode 4 free but still referenced as inode 3\n";
+  offset = INODESTART * BSIZE + 3 * sizeof(dinode);
+  dinode bad_inode_pair[2] = {
+    {},
+    inodes[3]
+  };
+  make_test_file(false, desc, error, offset, &bad_inode_pair, sizeof(bad_inode_pair));
+
 
   assert(0 == close(fsfd));
   return 0;

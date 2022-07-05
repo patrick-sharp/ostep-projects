@@ -17,6 +17,7 @@ char *get_bitmap();
 
 bool is_nth_bit_1(void *bitmap, int n);
 void set_nth_bit_0(void *bitmap, int n);
+void set_nth_bit_1(void *bitmap, int n);
 bool is_addr_in_bounds(u32 addr);
 
 void *file_bytes;
@@ -58,13 +59,29 @@ int main(int argc, char **argv) {
   u32 direct_addrs[FSSIZE];
   int num_indirect_addrs = 0;
   u32 indirect_addrs[FSSIZE];
+  u8 used_inodes_bitmap[NINODES / 8] = { 0 };
+  u8 referenced_inodes_bitmap[NINODES / 8] = { 0 };
 
   // list out all the direct and indirect addresses
+  // list out all the inode numbers in directories
+  // list out all the inode numbers whose type != 0
   for (int i = 0; i < NINODES; i++) {
     dinode *ip = get_nth_inode(i);
-    if (xshort(ip->type) == 0) {
+    u16 type = xshort(ip->type);
+    if (type == 0) {
       continue;
+    } else if (type == T_DIR) {
+      for (int j = 0; j < BSIZE / sizeof(dirent); j++) {
+        dirent *de = get_nth_dirent(ip, j);
+        u16 inum = xshort(de->inum);
+        if (inum != 0) {
+          set_nth_bit_1(referenced_inodes_bitmap, inum);
+        }
+      }
     }
+
+    set_nth_bit_1(used_inodes_bitmap, i);
+
     for (int j = 0; j < NDIRECT; j++) {
       u32 direct_addr = xint(ip->addrs[j]);
       if (direct_addr != 0) {
@@ -203,6 +220,20 @@ int main(int argc, char **argv) {
     }
   }
 
+  // ERROR: inode marked use but not found in a directory.
+  // ERROR: inode referred to in directory but marked free.
+  for (int i = 0; i < NINODES; i++) {
+    bool nth_inode_used = is_nth_bit_1(used_inodes_bitmap, i);
+    bool nth_inode_referenced = is_nth_bit_1(referenced_inodes_bitmap, i);
+    if (nth_inode_used && !nth_inode_referenced) {
+      fprintf(stderr, "ERROR: inode marked use but not found in a directory.\n");
+      exit(1);
+    } else if (!nth_inode_used && nth_inode_referenced) {
+      fprintf(stderr, "ERROR: inode referred to in directory but marked free.\n");
+      exit(1);
+    }
+  }
+
   assert(0 == munmap(file_bytes, statbuf.st_size));
   return 0;
 }
@@ -221,8 +252,12 @@ bool is_addr_in_bounds(u32 addr) {
 }
 
 void set_nth_bit_0(void *bitmap, int n) {
-  assert(n < BSIZE);
   ((u8 *) bitmap)[n/8] &= ~(0x1 << (n%8)); 
+}
+
+void set_nth_bit_1(void *bitmap, int n) {
+  //printf("%i\n", n);
+  ((u8 *) bitmap)[n/8] |= (0x1 << (n%8)); 
 }
 
 dinode *get_nth_inode(int n) {
