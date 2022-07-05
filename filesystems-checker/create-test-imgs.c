@@ -326,15 +326,28 @@ int main(int argc, char **argv) {
 
   
   error = "ERROR: direct address used more than once.\n";
-  desc = "Address 59 is used more than once\n";
+  desc = "Address 59 is used more than once (direct addr of new inode)\n";
   offset = INODESTART * BSIZE + 4 * sizeof(dinode); 
   bad_inode = (dinode) {
       xshort(T_FILE),     // type
       0, 0,               // major and minor (not relevant)
       xshort(1),          // nlink
-      xint(BSIZE),        // size (since root dir is one block)
+      0,                  // size (not relevant)
       { xint(DATASTART) } // addrs (same as root dir, but a file)
   };
+
+
+  error = "ERROR: indirect address used more than once.\n";
+  desc = "Address 89 (0x59) is used more than once\n";
+  offset = INODESTART * BSIZE + 4 * sizeof(dinode); 
+  bad_inode = (dinode) {
+      xshort(T_FILE), // type
+      0, 0,           // major and minor (not relevant)
+      xshort(1),      // nlink
+      0,              // size (not relevant)
+      { 0 }           // addrs 
+  };
+  bad_inode.addrs[NDIRECT] = xint(0x59);
   make_test_file(false, desc, error, offset, &bad_inode, sizeof(dinode));
   
 

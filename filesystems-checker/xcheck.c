@@ -85,6 +85,10 @@ int main(int argc, char **argv) {
     }
   }
 
+  /*for (int i = 0; i < num_indirect_addrs; i++) {
+    printf("%i\n", indirect_addrs[i]);
+  }*/
+
   // ERROR: bad direct address in inode.
   for (int i = 0; i < num_direct_addrs; i++) {
     if (!is_addr_in_bounds(direct_addrs[i])) {
@@ -175,6 +179,14 @@ int main(int argc, char **argv) {
   for (int i = 0; i < num_direct_addrs - 1; i++) {
     for (int j = i + 1; j < num_direct_addrs; j++) {
       if (direct_addrs[i] == direct_addrs[j]) {
+        fprintf(stderr, "ERROR: direct address used more than once.\n");
+        exit(1);
+      }
+    }
+  }
+  for (int i = 0; i < num_direct_addrs; i++) {
+    for (int j = 0; j < num_indirect_addrs; j++) {
+      if (direct_addrs[i] == indirect_addrs[j]) {
         fprintf(stderr, "ERROR: direct address used more than once.\n");
         exit(1);
       }
