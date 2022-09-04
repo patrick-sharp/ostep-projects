@@ -3,20 +3,52 @@
 #include "user.h"
 #include "pstat.h"
 
+// width must be <= 15
+int
+print_width_int(int width, int n) {
+  static char digits[] = "0123456789";
+  char buf[16] = { [0 ... 15 ] = ' ' }; // gcc designated initializer
+  int temp;
+  int int_width;
+  int i;
+
+  if (n < 0 || n >= 16)
+    return -1;
+   
+  temp = n;
+  int_width = 0;
+  do {
+    int_width++;
+  } while ((temp /= 10) != 0);
+
+  i = width - int_width;
+  do {
+    buf[i++] = digits[n % 10];
+  } while((n /= 10) != 0);
+  buf[width] = ' ';
+  buf[width + 1] = '\0';
+
+  printf(1, buf);
+  return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
-  //struct pstat pinfo;
-  printf(1, "About to getpinfo\n");
-  printf(1, "%d\n", uptime());
-  //getpinfo(&pinfo);
-  printf(1, "uptime addr %p\n", uptime);
-  printf(1, "read addr %p\n", read);
-  printf(1, "wait addr %p\n", wait);
-  printf(1, "getpid addr %p\n", getpid);
-  printf(1, "fork addr %p\n", fork);
-  printf(1, "close addr %p\n", close);
-  printf(1, "getpinfo addr %p\n", getpinfo);
-  printf(1, "getpinfo'ed\n");
+  struct pstat pinfo;
+  int i;
+  if (getpinfo(&pinfo) == -1) {
+    printf(1, "ERROR: getpinfo returned -1\n");
+    exit();
+  }
+  printf(1, "pid tickets ticks\n");
+  for (i = 0; i < NPROC; i++) {
+    if (!pinfo.inuse[i])
+      continue;
+    print_width_int(3, pinfo.pid[i]);
+    print_width_int(7, pinfo.tickets[i]);
+    print_width_int(5, pinfo.ticks[i]);
+    printf(1, "\n");
+  }
   exit();
-}
+}       

@@ -111,14 +111,14 @@ int
 sys_getpinfo(void)
 {
   struct pstat *pstat_p;
-  if(argptr(1, (void *)&pstat_p, sizeof(struct pstat)) < 0)
+  if(argptr(0, (void *)&pstat_p, sizeof(struct pstat)) < 0)
     return -1;
   if (pstat_p == 0)
     return -1;
 
   acquire(&ptable.lock);
   for (int i = 0; i < NPROC; i++) {
-    if ((pstat_p->inuse[i] = ptable.proc[i].state == UNUSED)){
+    if ((pstat_p->inuse[i] = ptable.proc[i].state != UNUSED)){
       pstat_p->tickets[i] = -1;
       pstat_p->pid[i] = -1;
       pstat_p->ticks[i] = -1;
