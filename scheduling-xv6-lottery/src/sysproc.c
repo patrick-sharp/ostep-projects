@@ -7,6 +7,13 @@
 #include "mmu.h"
 #include "proc.h"
 #include "pstat.h" // for lottery scheduler
+#include "spinlock.h"
+
+// so scheduler can see the process table
+extern struct {
+  struct spinlock lock;
+  struct proc proc[NPROC];
+} ptable;
 
 int
 sys_fork(void)
@@ -92,15 +99,34 @@ sys_uptime(void)
 }
 
 // new system calls for the lottery scheduler
-// set the tickest
+// set the tickets
 int 
-sys_settickets (int number)
+sys_settickets(void)
 {
   return 0;
 }
 
+// get info about a process, including new properties added for this project
 int 
-sys_getpinfo (struct pstat *pstat_p)
+sys_getpinfo(void)
 {
+  struct pstat *pstat_p;
+  if(argptr(1, (void *)&pstat_p, sizeof(struct pstat)) < 0)
+    return -1;
+  if (pstat_p == 0)
+    return -1;
+
+  acquire(&ptable.lock);
+  for (int i = 0; i < NPROC; i++) {
+    if ((pstat_p->inuse[i] = ptable.proc[i].state == UNUSED)){
+      pstat_p->tickets[i] = -1;
+      pstat_p->pid[i] = -1;
+      pstat_p->ticks[i] = -1;
+    }
+    pstat_p->tickets[i] = ptable.proc[i].tickets;
+    pstat_p->pid[i] = ptable.proc[i].pid;
+    pstat_p->ticks[i] = ptable.proc[i].ticks;
+  }
+  release(&ptable.lock);
   return 0;
 }
