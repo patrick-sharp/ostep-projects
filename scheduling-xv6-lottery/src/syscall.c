@@ -131,7 +131,7 @@ static int (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 // new system calls for lottery scheduler
 [SYS_settickets] sys_settickets,
-[SYS_getpinfo]   sys_close,
+[SYS_getpinfo]   sys_getpinfo,
 };
 
 void
