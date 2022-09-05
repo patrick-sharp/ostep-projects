@@ -99,10 +99,14 @@ sys_uptime(void)
 }
 
 // new system calls for the lottery scheduler
-// set the tickets
+// set the tickets of the calling process
 int 
 sys_settickets(void)
 {
+  int numtickets;
+  if(argint(0, &numtickets) < 0)
+    return -1;
+  myproc()->tickets = number;
   return 0;
 }
 

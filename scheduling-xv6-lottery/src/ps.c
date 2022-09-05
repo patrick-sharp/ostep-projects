@@ -12,7 +12,7 @@ print_width_int(int width, int n) {
   int int_width;
   int i;
 
-  if (n < 0 || n >= 16)
+  if (n < 0)
     return -1;
    
   temp = n;
@@ -21,9 +21,14 @@ print_width_int(int width, int n) {
     int_width++;
   } while ((temp /= 10) != 0);
 
-  i = width - int_width;
+  if (int_width > width)
+    return -1;
+
+  i = width - 1;
   do {
-    buf[i++] = digits[n % 10];
+    buf[i--] = digits[n % 10];
+    if (i < 0)
+      return -1;
   } while((n /= 10) != 0);
   buf[width] = ' ';
   buf[width + 1] = '\0';
@@ -41,13 +46,13 @@ main(int argc, char *argv[])
     printf(1, "ERROR: getpinfo returned -1\n");
     exit();
   }
-  printf(1, "pid tickets ticks\n");
+  printf(1, "pid tickets   ticks\n");
   for (i = 0; i < NPROC; i++) {
     if (!pinfo.inuse[i])
       continue;
     print_width_int(3, pinfo.pid[i]);
     print_width_int(7, pinfo.tickets[i]);
-    print_width_int(5, pinfo.ticks[i]);
+    print_width_int(7, pinfo.ticks[i]);
     printf(1, "\n");
   }
   exit();
