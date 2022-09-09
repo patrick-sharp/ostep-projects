@@ -3,7 +3,8 @@
 infile=$1
 testnames=$2
 
-gawk -vtestnames=$testnames '
+# gawk -vtestnames=$testnames '
+awk -vtestnames=$testnames '
 ($1 == "_mkdir\\") {
   n = split(testnames, x, ",");
   for (i = 1; i <= n; i++) {

@@ -106,7 +106,7 @@ sys_settickets(void)
   int numtickets;
   if(argint(0, &numtickets) < 0)
     return -1;
-  myproc()->tickets = number;
+  myproc()->tickets = numtickets;
   return 0;
 }
 

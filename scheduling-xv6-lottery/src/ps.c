@@ -8,21 +8,7 @@ int
 print_width_int(int width, int n) {
   static char digits[] = "0123456789";
   char buf[16] = { [0 ... 15 ] = ' ' }; // gcc designated initializer
-  int temp;
-  int int_width;
   int i;
-
-  if (n < 0)
-    return -1;
-   
-  temp = n;
-  int_width = 0;
-  do {
-    int_width++;
-  } while ((temp /= 10) != 0);
-
-  if (int_width > width)
-    return -1;
 
   i = width - 1;
   do {

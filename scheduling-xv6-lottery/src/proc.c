@@ -88,7 +88,6 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-  p->ticks = 0; // for lottery scheduler
 
   release(&ptable.lock);
 
@@ -149,6 +148,7 @@ userinit(void)
   // because the assignment might not be atomic.
   acquire(&ptable.lock);
 
+  p->tickets = 1; // for lottery scheduler
   p->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -189,6 +189,9 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
+  
+  // for lottery scheduler: copy parent's tickets to child
+  np->tickets = curproc->tickets;
 
   // Copy process state from proc.
   if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
@@ -312,6 +315,19 @@ wait(void)
   }
 }
 
+
+// generates a number between 0 and max (inclusive, exclusive)
+uint
+randint(uint seed, uint max)
+{
+  if (max == 0 || max == 1)
+    return 0;
+  uint a = seed * 15485863;
+  uint res = a * a * a;
+  
+  return res % max;
+}
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -324,8 +340,15 @@ void
 scheduler(void)
 {
   struct proc *p;
+  // for lottery 
+  uint sum_tickets;
+  uint seed;
+  uint winner;
+  uint counter;
+
   struct cpu *c = mycpu();
   c->proc = 0;
+  seed = 1; // for random ints in lottery
   
   for(;;){
     // Enable interrupts on this processor.
@@ -333,9 +356,31 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
+    // time to hold a lottery
+    sum_tickets = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
+      sum_tickets += p->tickets;
+    }
+
+    // if there are RUNNABLE processes, find one to switch to.
+    // otherwise, do nothing.
+    if (sum_tickets > 0) {
+      counter = 0;
+      
+      winner = randint(seed++, sum_tickets);
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE)
+          continue;
+        counter += p->tickets;
+        if (counter >= winner) {
+          //cprintf("m %d c %d w %d\n", sum_tickets, counter, winner);
+          break;
+        }
+      }
+      // p now points at winning process
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
@@ -352,8 +397,8 @@ scheduler(void)
       // It should have changed its p->state before coming back.
       c->proc = 0;
     }
+    
     release(&ptable.lock);
-
   }
 }
 
@@ -534,3 +579,54 @@ procdump(void)
     cprintf("\n");
   }
 }
+
+
+// for debugging lottery scheduler
+// only use this from GDB
+// gdb command for testing scheduler:
+
+int
+print_width_int(int width, int n) {
+  static char digits[] = "0123456789";
+  char buf[16] = { [0 ... 15 ] = ' ' }; // gcc designated initializer
+  int i;
+
+  i = width - 1;
+  do {
+    buf[i--] = digits[n % 10];
+    if (i < 0)
+      return -1;
+  } while((n /= 10) != 0);
+  buf[width] = ' ';
+  buf[width + 1] = '\0';
+
+  cprintf(buf);
+  return 0;
+}
+
+void
+lottery_procdump(void)
+{
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [EMBRYO]    "embryo",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+  cprintf("\npid tickets   ticks name state\n");
+  int i;
+
+  for (i = 0; i < NPROC; i++) {
+    if (ptable.proc[i].state == UNUSED)
+      continue;
+    print_width_int(3, ptable.proc[i].pid);
+    print_width_int(7, ptable.proc[i].tickets);
+    print_width_int(7, ptable.proc[i].ticks);
+    cprintf(ptable.proc[i].name);
+    cprintf(states[p->state]);
+    cprintf("\n");
+  }
+  cprintf("\n");
+}       
