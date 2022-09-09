@@ -625,7 +625,7 @@ lottery_procdump(void)
     print_width_int(7, ptable.proc[i].tickets);
     print_width_int(7, ptable.proc[i].ticks);
     cprintf(ptable.proc[i].name);
-    cprintf(states[p->state]);
+    cprintf(states[ptable.proc[i].state]);
     cprintf("\n");
   }
   cprintf("\n");
