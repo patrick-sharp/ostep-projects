@@ -89,3 +89,30 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// virtual memory protection system calls
+int
+sys_mprotect(void)
+{
+  void *addr;
+  int len;
+  if(argint(1, &len) < 0)
+    return -1;
+  if(argptr(0, (char**)&addr, len) < 0)
+    return -1;
+  cprintf("LMAO");
+  return 0;
+}
+
+int
+sys_munprotect(void)
+{
+  void *addr;
+  int len;
+  if(argint(1, &len) < 0)
+    return -1;
+  if(argptr(0, (char**)&addr, len) < 0)
+    return -1;
+  cprintf("LOL");
+  return 0;
+}

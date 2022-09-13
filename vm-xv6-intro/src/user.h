@@ -23,6 +23,9 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+// for virtual memory project
+int mprotect(void *addr, int len);
+int munprotect(void *addr, int len);
 
 // ulib.c
 int stat(const char*, struct stat*);
