@@ -25,10 +25,13 @@ del \<#\> (delete breakpoint number \<#\>)
 c continue (run until breakpoint)
 n next (step over a function call)
 s step (step into a function call)
+ni next machine instruction (step over a function call)
+si step machine instruction (step into a function call)
 finish fin (step out of a function call)
 print \<var\> (print the value of the variable \<var\>)
 ptype \<var\> (print the type of the variable \<var\>)
 frame (print the current line and what function/file it's in)
+layout asm (switch to view where the current asm instruction + context is shown above the cli)
 
 
 # Useful things to look at in gdb

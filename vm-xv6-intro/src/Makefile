@@ -122,6 +122,12 @@ initcode: initcode.S
 	$(OBJCOPY) -S -O binary initcode.out initcode
 	$(OBJDUMP) -S initcode.o > initcode.asm
 
+# test_nullptr: test_nullptr.S
+# 	$(CC) $(CFLAGS) -nostdinc -I. -c test_nullptr.S
+# 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o test_nullptr.out test_nullptr.o
+# 	$(OBJCOPY) -S -O binary test_nullptr test_nullptr
+# 	$(OBJDUMP) -S test_nullptr.o > test_nullptr.asm
+
 kernel: $(OBJS) entry.o entryother initcode kernel.ld
 	$(LD) $(LDFLAGS) -T kernel.ld -o kernel entry.o $(OBJS) -b binary initcode entryother
 	$(OBJDUMP) -S kernel > kernel.asm
@@ -183,6 +189,7 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
+	_test_nullptr\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -255,6 +262,7 @@ EXTRA=\
 	usertests.c wc.c zombie.c\ printf.c umalloc.c\
 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
 	.gdbinit.tmpl gdbutil\
+	test_nullptr.c\
 
 dist:
 	rm -rf dist

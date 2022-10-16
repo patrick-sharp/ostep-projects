@@ -1,0 +1,107 @@
+Plan of attack
+- Figure out what the data structure for the page table looks like, and where it is for each process.
+  - Two level page table: how does it look in memory?
+- Figure out what exec is doing
+- Add sysprotect 
+- Add sysunprotect
+
+Outline of virtual memory process:
+main process allocates from end to 2^22 bytes of memory
+
+PHYSTOP is the top of physical memory (max possible ram in a machine with xv6 as the OS)
+
+PGROUNDUP rounds up to the nearest multiple of 4096.
+PGROUNDDOWN you can guess
+
+The end variable is the beginning of memory that can be allocated by the page allocator.
+
+V2P and P2V just subtract/add 0x80000000 (2^31, about 2 billion). This implies that virtual addresses map exactly to physical addresses, just offset. This probably only applies to memory used by the kernel - memory used by user processes is used according to that process's page table.
+
+kmap is an array of kernel mappings containing the virtual address for that piece of memory, the physical address of the start of that space, the physical address of the end of that space, and the permissions for that space.
+The spaces are:
+IO spaces
+  0 - EXTMEM, writable
+Kernel text + read only data  
+  V2P(KERNLINK) - V2P(data), not writable
+Kernel data and memory
+  V2P(data) - PHYSTOP, writable
+More devices
+  DEVSPACE - infinity, writable
+
+kinit1 frees all the pages in the part of memory that is allocatable as pages. This prepares those areas to be allocated for use by user processes. Page size is 4096 bytes.
+
+kvmalloc
+  setupkvm 
+    kalloc
+      Gets pointer to free page of physical memory.
+      The kernel can use this pointer
+    pgdir now points to a free page of physical memory
+    for each member of the four-element kmap array,
+      mappages (maps all pages needed for given size into this process's two-level page table)
+        walkpgdir (finds the page table entry for a virtual address, or crallocates a new one if that virtual address doesn't map to a page in the process' page table)
+          kalloc if necessary.
+    returns pdgir
+      pdgir points to a page of physical memory with a page table in it
+  switchkvm
+    lcr3
+      lcr3 uses a gcc extension to write the value of pgdir's location in physical memory to the cr3 register
+      cr3 register holds the physical address of the page directory table
+      it's how the CPU knows to translate virtual addresses into physical.
+    
+
+You call walkpgdir when you have a virtual address and a page directory, and you want to find the page table that corresponds to that virtual address. the alloc param will allocate more pages if needed (I don't know when that would be needed).
+  pgdir is the first element of an array of ints
+  each int represents permissions (see PTE_P etc.)
+
+
+pde_t and pte_t are both just uints
+pde_t is a Page Directory Entry (I think)
+pte_t is a Page Table Entry
+
+PDX is page directory index
+PTX is page table index
+
+Both are ten bits long (0x3ff bitmask)
+left shift by 12 for PTX to be the least-significant 10 bits
+left shift by 22 for PDX to be the least-significant 10 bits
+
+Virtual address in xv6:
+10 bit PDX 10 bit PTX 12 bit offset
+__________ __________ ____________
+
+The offset is 12 bits because a page has 4096 bytes and 2 ^ 12 = 4096.
+  offset is the address within a page.
+
+Basically, a pde_t is where the page table for  a process is. This is called a page directory in xv6 because it uses a two-level page table.
+There is a page directory. Each entry in the page directory is a page table. Each page table is an array where the index represents page numbers and the elements are the physical addresses where those pages are stored.
+
+PTE_ADDR gets the 12 lowest bits (0xFFF) of a virtual address.
+  This is the offset - the address within the page
+
+NPDENTRIES is 1024
+NPTENTRIES is 1024.
+That means 1024 * 1024 total page mappings I think?
+
+basically ints get cast to pointers.
+
+Ok, now that I know a little about how the pages work when they're initialized in kvmalloc,
+I need to learn about how a process' memory gets populated on a call to exec
+
+exec
+  Finds the inode
+  checks some stuff with an ELF header (probably not important)
+  has a "bad" label: cleans up virtual memory stuff if something goes wrong.
+  locks the inode
+  checks a bunch of ELF shit with file sizes I think, idk.
+  calls allocuvm (allocate user-space virtual memory)
+    this allocs pages to grow a process' available memory.
+    It will also map the pages for a new page table
+  calls loaduvm (load user-space virtual memory)
+    this is the function that loads a program "segment" into memory.
+
+
+ Snag - looks like my version of xv6 already has some kind of memory protection.
+ It only happens when I actually print out a value that comes from a null refrence.
+ HOW?????
+  Maybe the compiler realizes if I don't print it, I'm not doing anything with it and optimizes it out.
+

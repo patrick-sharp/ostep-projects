@@ -100,7 +100,7 @@ sys_mprotect(void)
     return -1;
   if(argptr(0, (char**)&addr, len) < 0)
     return -1;
-  cprintf("LMAO");
+  cprintf("LMAO\n");
   return 0;
 }
 
@@ -113,6 +113,6 @@ sys_munprotect(void)
     return -1;
   if(argptr(0, (char**)&addr, len) < 0)
     return -1;
-  cprintf("LOL");
+  cprintf("LOL\n");
   return 0;
 }

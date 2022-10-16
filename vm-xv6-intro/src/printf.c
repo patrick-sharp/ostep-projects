@@ -63,12 +63,24 @@ printf(int fd, const char *fmt, ...)
       } else if(c == 's'){
         s = (char*)*ap;
         ap++;
-        if(s == 0)
-          s = "(null)";
-        while(*s != 0){
-          putc(fd, *s);
-          s++;
+        if(s == 0) {
+          for (uchar mychar = 0; mychar < 3; mychar++) {
+            putc(fd, *s);
+            s++;
+          }
+        } else {
+          while(*s != 0){
+            putc(fd, *s);
+            s++;
+          }
         }
+        
+        //if(s == 0)
+        //  s = "(null)";
+        //while(*s != 0){
+        //  putc(fd, *s);
+        //  s++;
+        //}
       } else if(c == 'c'){
         putc(fd, *ap);
         ap++;
